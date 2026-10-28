@@ -1,0 +1,1853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Voxel Garden</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased}
+body{overflow:hidden;background:#000}
+#c{width:100vw;height:100vh;display:block}
+
+:root{
+  --g-bg:    rgba(255,255,255,.16);
+  --g-bg2:   rgba(255,255,255,.26);
+  --g-border:rgba(255,255,255,.4);
+  --g-shadow:0 8px 32px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.45);
+  --g-ink:   rgba(35,28,26,.88);
+  --g-ink2:  rgba(255,255,255,.65);
+  --g-ink3:  rgba(255,255,255,.4);
+  --g-accent:#e2935a;
+  --g-green: #58c462;
+  --mono:    'SF Mono','Fira Mono','Consolas',monospace;
+  --r:       50px;
+  --bar-w:   min(580px, calc(100vw - 32px));
+  --bar-bot: max(28px, env(safe-area-inset-bottom, 28px));
+}
+
+/* ── Time badge — now purely informational, non-interactive ── */
+#time-badge{
+  position:fixed;top:16px;left:50%;transform:translateX(-50%);
+  background:rgba(255,255,255,.14);backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4);
+  border:1px solid rgba(255,255,255,.3);border-radius:24px;
+  padding:5px 16px;font-size:10px;color:rgba(255,255,255,.9);text-shadow:0 1px 3px rgba(0,0,0,.25);
+  pointer-events:none;cursor:default;letter-spacing:.06em;
+  white-space:nowrap;font-family:var(--mono);
+  max-width:calc(100vw - 100px);overflow:hidden;text-overflow:ellipsis;text-align:center;
+}
+
+/* ── Settings FAB — the actual, separate trigger for the ambience panel ── */
+#settings-fab{
+  position:fixed;top:16px;left:16px;z-index:903;
+  width:44px;height:44px;border-radius:50%;
+  background:rgba(255,255,255,.16);backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4);
+  border:1px solid rgba(255,255,255,.4);box-shadow:var(--g-shadow);
+  color:rgba(255,255,255,.92);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:background .15s, transform .15s;
+  -webkit-tap-highlight-color:transparent;
+}
+#settings-fab:hover{background:rgba(255,255,255,.26)}
+#settings-fab:active{transform:scale(.94)}
+
+/* ── Tasks FAB — top-right, opens the todo card ── */
+#todo-fab{
+  position:fixed;top:16px;right:16px;z-index:903;
+  width:44px;height:44px;border-radius:50%;
+  background:rgba(255,255,255,.16);backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4);
+  border:1px solid rgba(255,255,255,.4);box-shadow:var(--g-shadow);
+  color:rgba(255,255,255,.92);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:background .15s, transform .15s;
+  -webkit-tap-highlight-color:transparent;
+}
+#todo-fab:hover{background:rgba(255,255,255,.26)}
+#todo-fab:active{transform:scale(.94)}
+
+/* ── Todo card — clean, solid, soft-white minimal (no glass here) ── */
+#todo-panel{
+  position:fixed;z-index:901;
+  top:50%;left:50%;
+  transform:translate(-50%,-50%) scale(1);
+  width:min(360px, calc(100vw - 48px));
+  max-height:min(560px,80vh);
+  display:flex;flex-direction:column;
+  transition:opacity .18s ease-out, transform .18s ease-out;
+  transform-origin:center center;
+  background:#fbfaf9;
+  border:none;
+  border-radius:30px;
+  box-shadow:0 30px 70px rgba(20,16,14,.16), 0 4px 14px rgba(20,16,14,.06);
+  padding:26px 24px 18px;
+}
+#todo-panel.hidden{opacity:0;pointer-events:none;transform:translate(-50%,-50%) scale(.94)}
+
+.td-panel-title{
+  font-family:var(--mono);font-size:21px;font-weight:700;
+  color:rgba(24,20,17,.94);letter-spacing:-.01em;
+}
+.td-panel-meta{
+  display:flex;align-items:center;justify-content:space-between;
+  margin:10px 0 16px;font-family:var(--mono);font-size:11px;color:rgba(60,48,42,.5);
+}
+.td-panel-date,.td-panel-count{display:flex;align-items:center;gap:6px}
+
+/* ── Ambience panel — anchored near the settings FAB, plain fast transition ── */
+#amb-panel{
+  position:fixed;z-index:901;
+  top:66px;left:16px;right:auto;
+  transform:translateY(0) scale(1);
+  width:min(300px,calc(100vw - 32px));
+  transition:opacity .16s ease-out, transform .16s ease-out;
+  transform-origin:top left;
+  background:rgba(255,255,255,.16);
+  backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4);
+  border:1px solid rgba(255,255,255,.4);
+  border-radius:24px;
+  box-shadow:var(--g-shadow);
+  padding:14px 22px 12px;
+}
+#amb-panel.hidden{
+  opacity:0;pointer-events:none;
+  transform:translateY(-8px) scale(.98);
+}
+
+/* ── Panel internals ── */
+.ap-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.ap-title{font-family:var(--mono);font-size:9px;letter-spacing:.18em;color:rgba(255,255,255,.6);text-transform:uppercase;text-shadow:0 1px 2px rgba(0,0,0,.2)}
+.ap-row{
+  display:flex;align-items:center;gap:10px;
+  padding:8px 14px;margin-bottom:6px;
+  background:rgba(255,255,255,.1);
+  border:1px solid rgba(255,255,255,.2);
+  border-radius:50px;
+}
+.ap-row:last-child{margin-bottom:0}
+.ap-lbl-text{
+  font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.85);
+  text-shadow:0 1px 2px rgba(0,0,0,.2);width:72px;flex-shrink:0;
+}
+.ap-val{font-family:var(--mono);font-size:10px;color:rgba(255,255,255,.7);min-width:34px;text-align:right;flex-shrink:0}
+.ap-segs{flex:1;display:flex;align-items:center;gap:5px;touch-action:none;-webkit-tap-highlight-color:transparent;cursor:pointer;height:17px}
+.ap-seg{
+  width:5px;height:5px;border-radius:50%;flex-shrink:0;
+  background:rgba(255,255,255,.4);
+  transition:all .12s;
+}
+.ap-seg.peak{
+  width:3px;height:17px;border-radius:2px;
+  background:#fff;box-shadow:0 0 8px rgba(255,255,255,.7);
+}
+.ap-toggle{
+  width:34px;height:19px;border-radius:10px;
+  background:rgba(255,255,255,.18);border:none;
+  cursor:pointer;position:relative;flex-shrink:0;
+  transition:background .18s;-webkit-tap-highlight-color:transparent;
+}
+.ap-toggle.on{background:#9fc3e8}
+.ap-toggle-knob{
+  position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;
+  background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3);
+  transition:transform .18s cubic-bezier(.4,0,.2,1);
+}
+.ap-toggle.on .ap-toggle-knob{transform:translateX(15px)}
+.ap-row-divider{width:1px;height:16px;background:rgba(255,255,255,.25);flex-shrink:0}
+.ap-reset{
+  width:26px;height:26px;border-radius:50%;padding:0;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);
+  color:rgba(255,255,255,.8);cursor:pointer;transition:background .12s,transform .18s;
+}
+.ap-reset:hover{background:rgba(255,255,255,.26)}
+.ap-reset:active{transform:rotate(-90deg)}
+.ap-danger{
+  width:26px;height:26px;border-radius:50%;padding:0;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);
+  color:rgba(255,255,255,.8);cursor:pointer;transition:background .12s,color .12s;
+}
+.ap-danger:hover{background:rgba(220,70,70,.4);color:#fff}
+.ap-danger:active{transform:scale(.92)}
+.ap-danger.confirming{background:rgba(220,70,70,.6);border-color:rgba(220,70,70,.7);color:#fff}
+
+/* ── Task list ── */
+#todo-list{overflow-y:auto;flex:1;display:flex;flex-direction:column;-webkit-overflow-scrolling:touch;padding-right:2px;scrollbar-width:none;-ms-overflow-style:none}
+#todo-list::-webkit-scrollbar{display:none;width:0;height:0}
+.td-item{
+  display:flex;align-items:center;gap:14px;padding:14px 2px;
+  cursor:pointer;
+  border-bottom:1px solid rgba(0,0,0,.07);
+  transition:opacity .2s;
+  -webkit-tap-highlight-color:transparent;
+}
+.td-item:last-child{border-bottom:none}
+.td-item.done{opacity:.5}
+.td-item.done .td-text{text-decoration:line-through;text-decoration-thickness:1.5px;text-decoration-color:rgba(40,32,28,.5)}
+.td-item.done:hover{opacity:.8}
+.td-item.done:hover .td-text{text-decoration-color:rgba(40,32,28,.75);color:rgba(40,32,28,.85)}
+.td-body{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0;order:1}
+.td-text{font-family:var(--mono);font-size:14px;color:rgba(25,20,18,.92);word-break:break-word;line-height:1.4}
+.td-date{font-family:var(--mono);font-size:11px;color:rgba(60,48,42,.5);letter-spacing:.02em}
+.td-del{background:none;border:none;color:rgba(0,0,0,.18);font-size:15px;cursor:pointer;padding:3px 5px;flex-shrink:0;opacity:0;transition:opacity .12s,color .12s;-webkit-tap-highlight-color:transparent;order:2}
+.td-item:hover .td-del{opacity:1}
+.td-del:hover,.td-del:active{color:rgba(220,60,60,.85)}
+.td-check{
+  width:26px;height:26px;border-radius:50%;
+  border:2px solid rgba(0,0,0,.14);
+  flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  transition:all .22s;color:#fff;font-size:13px;
+  order:3;
+}
+.td-item.done .td-check{background:#4bc766;border-color:#4bc766}
+
+/* ── Add task row ── */
+.td-add-row{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  margin-top:14px;padding:13px;border-radius:50px;flex-shrink:0;
+  background:rgba(0,0,0,.035);border:1px dashed rgba(0,0,0,.16);
+  font-family:var(--mono);font-size:12px;color:rgba(50,40,35,.7);
+  cursor:pointer;transition:background .15s;
+  -webkit-tap-highlight-color:transparent;
+}
+.td-add-row:hover{background:rgba(0,0,0,.06)}
+
+/* ── Completed section — collapsed by default ── */
+.td-completed-toggle{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:10px 2px;cursor:pointer;
+  font-family:var(--mono);font-size:11px;color:rgba(60,48,42,.6);
+  -webkit-tap-highlight-color:transparent;
+}
+.td-completed-toggle svg{transition:transform .18s}
+.td-completed-toggle.open svg{transform:rotate(180deg)}
+
+/* ── Task input bar — standalone: just the text field + submit ── */
+#task-bar{
+  position:fixed;
+  bottom:var(--bar-bot);
+  left:50%;transform:translateX(-50%);
+  width:var(--bar-w);
+  background:rgba(255,255,255,.16);
+  backdrop-filter:blur(28px) saturate(1.4);-webkit-backdrop-filter:blur(28px) saturate(1.4);
+  border:1px solid rgba(255,255,255,.4);
+  border-radius:28px;
+  box-shadow:var(--g-shadow);
+  display:flex;align-items:center;
+  height:56px;padding:0 8px;
+  z-index:900;
+}
+#task-input{
+  flex:1;height:100%;background:none;border:none;outline:none;
+  font-family:var(--mono);font-size:14px;
+  color:rgba(35,28,26,.92);caret-color:var(--g-green);
+  padding:0 16px;-webkit-appearance:none;min-width:0;
+}
+#task-input::placeholder{color:rgba(35,28,26,.55);font-style:italic}
+#task-submit{
+  display:none;flex-shrink:0;width:34px;height:34px;
+  border-radius:12px;background:rgba(0,0,0,.06);
+  border:1px solid rgba(0,0,0,.14);color:rgba(35,28,26,.75);cursor:pointer;
+  align-items:center;justify-content:center;
+  transition:background .12s;margin-right:4px;
+  -webkit-tap-highlight-color:transparent;
+}
+#task-submit:active{background:rgba(0,0,0,.12)}
+
+/* ── Mobile ── */
+@media (max-width:640px){
+  :root{--bar-bot:max(20px,env(safe-area-inset-bottom,20px))}
+  #task-bar{height:52px;border-radius:26px;padding:0 4px;width:calc(100vw - 140px);--bar-w:calc(100vw - 140px)}
+  #task-input{font-size:16px;padding:0 10px}
+  #task-submit{display:flex}
+  #todo-fab,#settings-fab{width:40px;height:40px}
+  #amb-panel{width:calc(100vw - 24px);padding:18px 18px 16px}
+  #todo-panel{width:calc(100vw - 32px);max-height:min(480px,74vh);padding:22px 20px 16px}
+  .td-panel-title{font-size:18px}
+  .td-check{width:24px;height:24px}
+  .td-text{font-size:13px}
+  #time-badge{font-size:10px;padding:5px 12px;max-width:calc(100vw - 120px)}
+}
+
+/* ── Tooltip ── */
+#lamp-tooltip{
+  position:fixed;pointer-events:none;z-index:999;
+  background:rgba(0,0,0,.55);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border:1px solid rgba(255,255,255,.15);border-radius:var(--r);
+  padding:8px 13px;font-family:var(--mono);font-size:12px;color:rgba(255,255,255,.88);
+  max-width:min(240px,72vw);line-height:1.5;
+  box-shadow:0 4px 20px rgba(0,0,0,.3);transition:opacity .1s;
+}
+#lamp-tooltip.hidden{opacity:0}
+
+/* ── Persistent tree labels (eye toggle) ── */
+.tree-label{
+  position:fixed;z-index:998;pointer-events:none;
+  transform:translate(-50%,-100%);
+  background:rgba(0,0,0,.55);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border:1px solid rgba(255,255,255,.15);border-radius:8px;
+  padding:5px 10px;font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.88);
+  white-space:nowrap;max-width:160px;overflow:hidden;text-overflow:ellipsis;
+  box-shadow:0 4px 14px rgba(0,0,0,.3);
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="lamp-tooltip" class="hidden"></div>
+
+<!-- Non-interactive status text -->
+<div id="time-badge">Day</div>
+
+<!-- Separate settings trigger -->
+<button id="settings-fab" title="Ambience settings">
+  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+    <line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2" fill="currentColor" stroke="none"/>
+    <line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/>
+    <line x1="4" y1="17" x2="20" y2="17"/><circle cx="11" cy="17" r="2" fill="currentColor" stroke="none"/>
+  </svg>
+</button>
+
+<div id="amb-panel" class="hidden">
+  <div class="ap-head">
+    <span class="ap-title">Ambience</span>
+    <button class="ap-reset" id="ap-reset" title="Reset">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/>
+      </svg>
+    </button>
+  </div>
+  <div id="ap-rows"></div>
+</div>
+
+<div id="todo-panel" class="hidden">
+  <span class="td-panel-title">My Tasks</span>
+  <div class="td-panel-meta">
+    <span class="td-panel-date">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="5" width="18" height="16" rx="3"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/>
+      </svg>
+      <span id="td-date-text"></span>
+    </span>
+    <span class="td-panel-count" id="td-count-text"></span>
+  </div>
+  <div id="todo-list"></div>
+  <button class="td-add-row" id="td-add-row">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+    Add Task
+  </button>
+</div>
+
+<!-- Tasks FAB — top right, opens the todo card -->
+<button id="todo-fab" title="Tasks">
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2 12l5 5L22 4"/><path d="M2 19l5 5L22 11" opacity=".45"/>
+  </svg>
+</button>
+
+<div id="task-bar">
+  <!-- Text input -->
+  <input id="task-input" type="text" placeholder="plant a new task…" maxlength="120" autocomplete="off" spellcheck="false">
+  <!-- Submit — mobile only -->
+  <button id="task-submit" title="Add task">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 12h14M12 5l7 7-7 7"/>
+    </svg>
+  </button>
+</div>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/controls/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Detect mobile ─────────────────────────────────────────────────────────────
+const IS_MOBILE = window.innerWidth <= 768 || ('ontouchstart' in window);
+
+// ── Renderer ──────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({
+  canvas, antialias: !IS_MOBILE, powerPreference:'high-performance'
+});
+renderer.setPixelRatio(IS_MOBILE ? 1 : Math.min(devicePixelRatio, 1.5));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = false;  // shadows OFF entirely
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+
+window.addEventListener('resize',()=>{
+  renderer.setSize(innerWidth,innerHeight);
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// ── Scene ─────────────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#1a3a6a');
+scene.fog = new THREE.FogExp2('#1a3a6a', 0.004);
+
+// ── Sky gradient dome — soft blue fading into a blush horizon, sits behind
+// fog/terrain so distance still fades naturally into the haze ────────────────
+const skyMat = new THREE.ShaderMaterial({
+  uniforms:{
+    topColor:{value:new THREE.Color('#3a86c8')},
+    botColor:{value:new THREE.Color('#f6dfe8')},
+    offset:{value:18}, exponent:{value:.62}
+  },
+  vertexShader:`varying vec3 vWorldPosition;
+    void main(){
+      vec4 wp = modelMatrix * vec4(position,1.0);
+      vWorldPosition = wp.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+    }`,
+  fragmentShader:`uniform vec3 topColor; uniform vec3 botColor; uniform float offset; uniform float exponent;
+    varying vec3 vWorldPosition;
+    void main(){
+      float h = normalize(vWorldPosition + vec3(0.0, offset, 0.0)).y;
+      gl_FragColor = vec4(mix(botColor, topColor, max(pow(max(h,0.0), exponent), 0.0)), 1.0);
+    }`,
+  side:THREE.BackSide, depthWrite:false, fog:false,
+});
+const skyDome = new THREE.Mesh(new THREE.SphereGeometry(380,24,16), skyMat);
+scene.add(skyDome);
+
+// ── Starfield — fades in at night, one draw call ──────────────────────────────
+const STAR_COUNT = IS_MOBILE?110:200;
+const starPos = new Float32Array(STAR_COUNT*3);
+for(let i=0;i<STAR_COUNT;i++){
+  const theta=Math.random()*Math.PI*2, phi=Math.acos(Math.random()*0.85);
+  const r=350;
+  starPos[i*3]   = r*Math.sin(phi)*Math.cos(theta);
+  starPos[i*3+1] = Math.abs(r*Math.cos(phi))*0.9+40;
+  starPos[i*3+2] = r*Math.sin(phi)*Math.sin(theta);
+}
+const starGeo = new THREE.BufferGeometry();
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos,3));
+const starMat = new THREE.PointsMaterial({color:'#ffffff', size:1.6, sizeAttenuation:false, transparent:true, opacity:0, depthWrite:false, fog:false});
+const stars = new THREE.Points(starGeo, starMat);
+stars.frustumCulled=false;
+scene.add(stars);
+
+// ── Camera ────────────────────────────────────────────────────────────────────
+const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.5, 400);
+camera.position.set(0, 28, 62);
+
+// ── Controls ──────────────────────────────────────────────────────────────────
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(0, 3, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 71;
+controls.maxDistance = 110;
+controls.zoomSpeed = 0.17;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.update();
+
+// ── Lighting — ONLY 2 lights total ───────────────────────────────────────────
+const hemi = new THREE.HemisphereLight(0x6ab4f5, 0x3a6a30, 1.2);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff8e0, 1.6);
+sun.position.set(60, 80, -40);
+scene.add(sun);
+
+// Warm night fill — mimics old-fashioned street-lamp ambient wash
+const nightFill = new THREE.PointLight(0xffcc66, 0, 200);
+nightFill.position.set(0, 18, 0);
+scene.add(nightFill);
+// Second fill from opposite angle for even coverage
+const nightFill2 = new THREE.PointLight(0xffaa44, 0, 200);
+nightFill2.position.set(-10, 14, -10);
+scene.add(nightFill2);
+
+// ── Ambience settings ─────────────────────────────────────────────────────────
+const AMB = { brightness: 1.0, fogDensity: 1.0, rain: false, wind: false };
+const FOG_BASE = 0.004;
+
+// ── Terrain helpers ───────────────────────────────────────────────────────────
+const terrain = new Map();
+const getH = (x,z) => terrain.get(`${Math.round(x)},${Math.round(z)}`) ?? 0;
+
+// ── Shared materials (reuse aggressively) ─────────────────────────────────────
+const MAT = {
+  grass1:  new THREE.MeshStandardMaterial({color:'#3f8a4a',emissive:'#173a1c',emissiveIntensity:0}),
+  grass2:  new THREE.MeshStandardMaterial({color:'#2f7a40',emissive:'#123018',emissiveIntensity:0}),
+  grass3:  new THREE.MeshStandardMaterial({color:'#256334',emissive:'#0e2616',emissiveIntensity:0}),
+  sand:    new THREE.MeshStandardMaterial({color:'#e0c587',emissive:'#7a6230',emissiveIntensity:0}),
+  // Lavender/pink eroded cliffstone — used sparingly now, just for the rocky peak tips
+  stone:   new THREE.MeshStandardMaterial({color:'#9a958f',emissive:'#444038',emissiveIntensity:0,roughness:.92}),
+  darkSt:  new THREE.MeshStandardMaterial({color:'#76716b',emissive:'#332f29',emissiveIntensity:0,roughness:.95}),
+  // Worn dirt/moss path — the trodden walkway running through the village
+  path:    new THREE.MeshStandardMaterial({color:'#4a4730',emissive:'#1f1d12',emissiveIntensity:0,roughness:.95}),
+  // Warm shingle-roof brown for the cabins
+  roof:    new THREE.MeshStandardMaterial({color:'#7a4a32',emissive:'#3a2218',emissiveIntensity:0,roughness:.85}),
+  wood:    new THREE.MeshStandardMaterial({color:'#5a3820',emissive:'#2a1a0a',emissiveIntensity:0,roughness:.85}),
+  red:     new THREE.MeshStandardMaterial({color:'#cc2200',emissive:'#660800',emissiveIntensity:0,roughness:.7}),
+  darkRed: new THREE.MeshStandardMaterial({color:'#881500',emissive:'#440800',emissiveIntensity:0,roughness:.7}),
+  iron:    new THREE.MeshStandardMaterial({color:'#2a2a2a',emissive:'#141414',emissiveIntensity:0,roughness:.7,metalness:.4}),
+  bam:     new THREE.MeshStandardMaterial({color:'#5a8a30',emissive:'#243a10',emissiveIntensity:0,roughness:.8}),
+  bamDark: new THREE.MeshStandardMaterial({color:'#3d6620',emissive:'#182a08',emissiveIntensity:0,roughness:.9}),
+  bamboPole: new THREE.MeshStandardMaterial({color:'#7a6830',emissive:'#3a3010',emissiveIntensity:0,roughness:.9}),
+  bowlMat: new THREE.MeshStandardMaterial({color:'#4a3218',emissive:'#221608',emissiveIntensity:0,roughness:.95}),
+  // Vivid sapphire lake water, brighter + slightly more reflective than before
+  water:   new THREE.MeshStandardMaterial({color:'#3f9fc9',emissive:'#163a4a',emissiveIntensity:.4,transparent:true,opacity:.8,roughness:.1}),
+};
+
+// All terrain+world mats that get night emissive — excludes water (always emissive)
+const NIGHT_MATS = [MAT.grass1,MAT.grass2,MAT.grass3,MAT.sand,MAT.stone,MAT.darkSt,MAT.path,MAT.roof,MAT.wood,MAT.red,MAT.darkRed,MAT.iron,MAT.bam,MAT.bamDark,MAT.bamboPole,MAT.bowlMat];
+
+// Emissive materials — no PointLight needed, just glow
+const EMIT = {
+  lampGlow: new THREE.MeshStandardMaterial({color:'#fff8d0',emissive:'#ffdd66',emissiveIntensity:6,transparent:true,opacity:.9}),
+  lampHalo: new THREE.MeshStandardMaterial({color:'#ffee88',emissive:'#ffcc44',emissiveIntensity:1.5,transparent:true,opacity:.07,depthWrite:false,side:THREE.BackSide}),
+  lanternBody: new THREE.MeshStandardMaterial({color:'#cc1100',roughness:.65,emissive:'#880000',emissiveIntensity:1.2}),
+  lanternGlow: new THREE.MeshStandardMaterial({color:'#ff4422',emissive:'#cc2200',emissiveIntensity:5.5,transparent:true,opacity:.9}),
+  torchFlame: new THREE.MeshStandardMaterial({color:'#ff6600',emissive:'#ff3300',emissiveIntensity:2.5,transparent:true,opacity:.82}),
+  torchOuter: new THREE.MeshStandardMaterial({color:'#ffaa00',emissive:'#ff6600',emissiveIntensity:1.2,transparent:true,opacity:.35,depthWrite:false}),
+  fireCore:   new THREE.MeshStandardMaterial({color:'#ff8800',emissive:'#ff4400',emissiveIntensity:6,transparent:true,opacity:.9}),
+};
+
+// ── Terrain generation ────────────────────────────────────────────────────────
+// Composition: a gently winding river runs through the village, banked by a
+// worn footpath, then two forested slopes rising into plain green mountainside
+// — no dramatic rock spike, just the hills continuing up like the rest of the
+// terrain.
+const PATH_HALF  = 5.5;
+const RIVER_HALF = 2.2;
+let riverWaterMat = null;
+
+// The river's centreline drifts side to side with z — a sum of two slow sine
+// waves keeps it irregular rather than a single obvious wiggle
+function riverCenterX(z){
+  return Math.sin(z*0.07)*3.2 + Math.sin(z*0.025+1.1)*2.1;
+}
+
+function buildTerrain(){
+  const SIZE = IS_MOBILE ? 30 : 36;
+  for(let x=-SIZE;x<=SIZE;x++) for(let z=-SIZE;z<=SIZE;z++){
+    const d=Math.hypot(x,z); if(d>SIZE) continue;
+
+    const dx = Math.abs(x - riverCenterX(z));
+    const distPath = Math.max(0, dx-PATH_HALF);
+    let h;
+    if(dx<=RIVER_HALF){
+      h = 1 + Math.sin(z*.3)*.12; // river bed, gentle ripple
+    } else if(distPath===0){
+      h = 2 + Math.sin(z*.3)*.4; // footpath bank
+    } else {
+      const slope = Math.min(distPath*1.05, 20);
+      const noise = Math.sin(x*.22)*1.1 + Math.cos(z*.18)*.9;
+      h = 2 + slope + noise;
+    }
+
+    terrain.set(`${x},${z}`, Math.floor(Math.max(0,Math.min(h,36))));
+  }
+
+  const dummy=new THREE.Object3D(), box=new THREE.BoxGeometry(1,1,1);
+  // Buckets: 0-2 jungle grass variants, 3 path/riverbed (worn earth), 4 stone, 5 darkSt
+  const buckets=[[],[],[],[],[],[]];
+  const riverCells=[];
+  for(const [key,h] of terrain){
+    const [x,z]=key.split(',').map(Number);
+    const dx = Math.abs(x - riverCenterX(z));
+    if(dx<=RIVER_HALF){ buckets[3].push({x,y:h/2,z,h}); riverCells.push({x,z}); continue; }
+    if(dx<=PATH_HALF){ buckets[3].push({x,y:h/2,z,h}); continue; }
+    if(h>=18){ buckets[4+Math.floor(Math.random()*2)].push({x,y:h/2,z,h}); continue; } // occasional rocky outcrop high on the hillside
+    buckets[Math.floor(Math.random()*3)].push({x,y:h/2,z,h}); // forested slope
+  }
+  [MAT.grass1,MAT.grass2,MAT.grass3,MAT.path,MAT.stone,MAT.darkSt].forEach((mat,mi)=>{
+    const pts=buckets[mi]; if(!pts.length) return;
+    const mesh=new THREE.InstancedMesh(box,mat,pts.length);
+    pts.forEach((p,i)=>{dummy.position.set(p.x,p.y,p.z);dummy.scale.set(1,p.h,1);dummy.updateMatrix();mesh.setMatrixAt(i,dummy.matrix);});
+    mesh.instanceMatrix.needsUpdate=true;
+    scene.add(mesh);
+  });
+
+  // River water surface
+  if(riverCells.length){
+    riverWaterMat = MAT.water;
+    const wBox=new THREE.BoxGeometry(1,.35,1);
+    const wMesh=new THREE.InstancedMesh(wBox,riverWaterMat,riverCells.length);
+    riverCells.forEach(({x,z},i)=>{dummy.position.set(x,1.45,z);dummy.scale.set(.98,1,.98);dummy.updateMatrix();wMesh.setMatrixAt(i,dummy.matrix);});
+    wMesh.instanceMatrix.needsUpdate=true; scene.add(wMesh);
+  }
+}
+
+// ── Footbridges — small wooden crossings over the river ──────────────────────
+function createBridge(z){
+  const g=new THREE.Group();
+  const width=(RIVER_HALF+0.6)*2;
+  const deck=new THREE.Mesh(new THREE.BoxGeometry(width,.18,1.05),MAT.wood);
+  deck.position.y=1.65; g.add(deck);
+  [-1,1].forEach(side=>{
+    const rail=new THREE.Mesh(new THREE.BoxGeometry(width,.45,.07),MAT.wood);
+    rail.position.set(0,2.0,side*0.5); g.add(rail);
+    [-1,1].forEach(end=>{
+      const post=new THREE.Mesh(new THREE.CylinderGeometry(.045,.045,.55,5),MAT.wood);
+      post.position.set(end*(width/2-.25),1.92,side*0.5); g.add(post);
+    });
+  });
+  g.position.set(riverCenterX(z),0,z);
+  scene.add(g);
+}
+
+// ── Forest trees — individual groups so canopies can vary, used to wall in
+// the path on both sides like the reference's tree corridor ──────────────────
+function createForestTree(x,z){
+  const y=getH(x,z);
+  const g=new THREE.Group();
+  const trunkH=3+Math.random()*2.3;
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.2,.32,trunkH,6),MAT.wood);
+  trunk.position.y=trunkH/2; g.add(trunk);
+  const leafMat = [MAT.grass1,MAT.grass2,MAT.grass3][Math.floor(Math.random()*3)];
+  const tiers = 2+Math.floor(Math.random()*2);
+  for(let i=0;i<tiers;i++){
+    const r=1.5-i*.28+Math.random()*.25;
+    const cloud=new THREE.Mesh(new THREE.DodecahedronGeometry(r,0), leafMat);
+    cloud.position.set((Math.random()-.5)*.5, trunkH-0.3+i*1.05, (Math.random()-.5)*.5);
+    g.add(cloud);
+  }
+  g.position.set(x,y,z);
+  scene.add(g);
+}
+function createForestCluster(cx,cz,count=IS_MOBILE?4:7,r=5){
+  for(let i=0;i<count;i++){
+    const a=Math.random()*Math.PI*2, rr=Math.random()*r;
+    createForestTree(cx+Math.cos(a)*rr, cz+Math.sin(a)*rr);
+  }
+}
+
+// ── Torii gate ────────────────────────────────────────────────────────────────
+function createTorii(cx,cz,rotY=0,scale=1){
+  const g=new THREE.Group();
+  const postH=8;
+
+  // Sample ground height under each post in world space
+  const postOffsets=[-2.2,2.2];
+  const postGroundY=postOffsets.map(lx=>{
+    const wx=cx+lx*Math.cos(rotY);
+    const wz=cz-lx*Math.sin(rotY);
+    return Math.max(getH(wx,wz), getH(wx+1,wz), getH(wx-1,wz), getH(wx,wz+1), getH(wx,wz-1));
+  });
+  // Place group at the lower post ground so neither floats
+  const baseY=Math.min(postGroundY[0],postGroundY[1]);
+
+  postOffsets.forEach((lx,i)=>{
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(.28,.35,postH,7),MAT.red);
+    post.position.set(lx,4,0); g.add(post);
+    // Foot extends down to match local terrain difference
+    const localGround=postGroundY[i]-baseY;
+    const footH=0.5+localGround;
+    const foot=new THREE.Mesh(new THREE.CylinderGeometry(.5,.5,footH,7),MAT.darkRed);
+    foot.position.set(lx,localGround-footH/2+0.25,0); g.add(foot);
+    // Sink post 1 unit into ground
+    post.position.set(lx,4+localGround-1,0);
+  });
+
+  const kasagi=new THREE.Mesh(new THREE.BoxGeometry(7.2,.55,.7),MAT.darkRed); kasagi.position.y=7.3; g.add(kasagi);
+  const shimagi=new THREE.Mesh(new THREE.BoxGeometry(5.8,.4,.55),MAT.red); shimagi.position.y=6.65; g.add(shimagi);
+  const nuki=new THREE.Mesh(new THREE.BoxGeometry(5.2,.35,.4),MAT.red); nuki.position.y=4.5; g.add(nuki);
+  g.scale.setScalar(scale);
+  g.rotation.y=rotY;
+  g.position.set(cx,baseY,cz);
+  scene.add(g);
+}
+
+// ── Task houses — each todo is a little stilted house along the riverbank.
+// Pending tasks show as a bare framed skeleton; completed tasks finish into
+// a proper blue-walled, lit cabin with a small flag ──────────────────────────
+const HOUSE_POOL = [
+  [-8,19],[8,19],[-8,8],[8,8],[-8,-4],[8,-4],[-8,-16],[8,-16],
+  [-13,13],[13,13],[-13,2],[13,2],[-13,-10],[13,-10],[-13,-22],[13,-22],
+];
+
+const taskHouses = []; // { group, hitMesh, todo, wallMat }
+
+function spawnTaskHouse(x, z, todo){
+  const y = getH(x, z);
+  const g = new THREE.Group();
+  const legH = 1.5 + ((todo.id||1)%5)*0.08;
+
+  [[-.9,-.7],[.9,-.7],[-.9,.7],[.9,.7]].forEach(([lx,lz])=>{
+    const leg=new THREE.Mesh(new THREE.CylinderGeometry(.09,.12,legH,5),MAT.wood);
+    leg.position.set(lx,legH/2,lz); g.add(leg);
+  });
+  const platform=new THREE.Mesh(new THREE.BoxGeometry(2.4,.22,2.0),MAT.wood);
+  platform.position.y=legH+.11; g.add(platform);
+
+  let wallMat;
+  if(todo.done){
+    // Finished house — blue walls, shingle roof, lit window, little flag
+    wallMat = new THREE.MeshStandardMaterial({color:'#3d4f7a',emissive:'#ffd27a',emissiveIntensity:.18,roughness:.85});
+    const wall=new THREE.Mesh(new THREE.BoxGeometry(2.0,1.3,1.7),wallMat);
+    wall.position.y=legH+.22+.65; g.add(wall);
+    const trim=new THREE.Mesh(new THREE.BoxGeometry(2.15,.2,1.85),MAT.wood);
+    trim.position.y=legH+.22+.1; g.add(trim);
+    const roof=new THREE.Mesh(new THREE.ConeGeometry(1.7,1.2,4),MAT.roof);
+    roof.rotation.y=Math.PI/4; roof.position.y=legH+.22+1.3+.6; g.add(roof);
+    const win=new THREE.Mesh(new THREE.BoxGeometry(.4,.4,.06),EMIT.lampGlow);
+    win.position.set(0,legH+.22+.7,.86); g.add(win);
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(.025,.025,.5,4),MAT.wood);
+    pole.position.y=legH+.22+1.3+1.2+.25; g.add(pole);
+    const flagMat=new THREE.MeshStandardMaterial({color:'#e8507a',emissive:'#7a2a44',emissiveIntensity:.3,side:THREE.DoubleSide});
+    const flag=new THREE.Mesh(new THREE.PlaneGeometry(.3,.2),flagMat);
+    flag.position.set(.16,legH+.22+1.3+1.35,0); g.add(flag);
+  } else {
+    // Under construction — bare frame, no walls or roof yet
+    wallMat = new THREE.MeshStandardMaterial({color:'#8a7860',emissive:'#1f1a14',emissiveIntensity:0,roughness:.9});
+    [[-1,-.85],[1,-.85],[-1,.85],[1,.85]].forEach(([cx,cz])=>{
+      const post=new THREE.Mesh(new THREE.CylinderGeometry(.07,.07,1.3,5),wallMat);
+      post.position.set(cx,legH+.22+.65,cz); g.add(post);
+    });
+    const brace=new THREE.Mesh(new THREE.BoxGeometry(2.0,.07,.07),wallMat);
+    brace.position.set(0,legH+.22+1.2,0); g.add(brace);
+  }
+  NIGHT_MATS.push(wallMat);
+
+  // Invisible hit sphere — large, easy to hover
+  const hitMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(1.7,6,6),
+    new THREE.MeshBasicMaterial({visible:false})
+  );
+  hitMesh.position.y = legH+1.0; g.add(hitMesh);
+
+  g.position.set(x, y, z);
+  scene.add(g);
+
+  const entry = { group:g, hitMesh, todo, wallMat };
+  hitMesh.userData.houseEntry = entry;
+  taskHouses.push(entry);
+  return entry;
+}
+
+function buildTaskHouses(){
+  taskHouses.forEach(t=>scene.remove(t.group));
+  taskHouses.length = 0;
+
+  // HOUSE_POOL entries are [offsetX, z] — offsetX is lateral distance from
+  // the river's centreline at that z, so houses stay correctly banked even
+  // as the river winds
+  const validPool = HOUSE_POOL.filter(([ox,z])=> getH(riverCenterX(z)+ox, z) > 2);
+
+  todos.forEach((t, i)=>{
+    if(i >= validPool.length) return;
+    const [ox, z] = validPool[i];
+    const seed = (t.id || i+1);
+    const nz = z + ((seed*6271)%100)/100 - 0.5;
+    const nx = riverCenterX(nz) + ox + ((seed*7919)%100)/100 - 0.5;
+    if(getH(nx,nz) <= 2) return;
+    spawnTaskHouse(nx, nz, t);
+  });
+  buildPersistentLabels(); // refresh eye-toggle labels to match current houses
+}
+
+// ── Hover / tooltip ───────────────────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let hoveredHouse = null;
+const tooltip = document.getElementById('lamp-tooltip');
+
+// ── Eye toggle — persistent labels for all houses ─────────────────────────────
+let labelsAlwaysOn = false;
+const persistentLabels = []; // { el, entry }
+
+function buildPersistentLabels(){
+  // Remove old label elements
+  persistentLabels.forEach(p=>p.el.remove());
+  persistentLabels.length = 0;
+  if(!labelsAlwaysOn) return;
+
+  taskHouses.forEach(entry=>{
+    if(entry.todo.done) return; // completed tasks don't need a persistent label
+    const el = document.createElement('div');
+    el.className = 'tree-label';
+    el.textContent = '🛖 ' + entry.todo.text;
+    document.body.appendChild(el);
+    persistentLabels.push({el, entry});
+  });
+}
+
+function updatePersistentLabelPositions(){
+  if(!labelsAlwaysOn || persistentLabels.length===0) return;
+  const v = new THREE.Vector3();
+  persistentLabels.forEach(({el, entry})=>{
+    v.set(entry.group.position.x, entry.group.position.y + 4.2, entry.group.position.z);
+    v.project(camera);
+    const behindCamera = v.z > 1;
+    const x = (v.x*.5+.5)*innerWidth;
+    const y = (-v.y*.5+.5)*innerHeight;
+    if(behindCamera || x<-100 || x>innerWidth+100 || y<-100 || y>innerHeight+100){
+      el.style.display='none';
+    } else {
+      el.style.display='block';
+      el.style.left = x+'px';
+      el.style.top  = y+'px';
+    }
+  });
+}
+
+function onPointerMove(e){
+  // Skip hover-tooltip logic entirely while persistent labels are on
+  if(labelsAlwaysOn){ tooltip.classList.add('hidden'); return; }
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  mouse.x = (clientX / innerWidth)  *  2 - 1;
+  mouse.y = (clientY / innerHeight) * -2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects(taskHouses.map(t=>t.hitMesh));
+
+  if(intersects.length > 0){
+    const entry = intersects[0].object.userData.houseEntry;
+    if(entry !== hoveredHouse){
+      if(hoveredHouse) setHouseHover(hoveredHouse, false);
+      hoveredHouse = entry;
+      setHouseHover(entry, true);
+    }
+    tooltip.style.left = (clientX + 14) + 'px';
+    tooltip.style.top  = (clientY - 12) + 'px';
+    tooltip.textContent = (entry.todo.done?'🏠 ':'🛖 ') + entry.todo.text;
+    tooltip.classList.remove('hidden');
+    canvas.style.cursor = 'pointer';
+  } else {
+    if(hoveredHouse){ setHouseHover(hoveredHouse, false); hoveredHouse = null; }
+    tooltip.classList.add('hidden');
+    canvas.style.cursor = '';
+  }
+}
+
+function setHouseHover(entry, on){
+  if(entry.todo.done){
+    entry.wallMat.emissiveIntensity = on ? .55 : .18;
+  } else {
+    entry.wallMat.emissiveIntensity = on ? .35 : 0;
+    entry.wallMat.emissive.set(on ? '#ffd27a' : '#1f1a14');
+  }
+}
+
+window.addEventListener('mousemove', onPointerMove, {passive:true});
+window.addEventListener('touchmove',  onPointerMove, {passive:true});
+
+// ── Tiki torch (emissive flame, no PointLight) ────────────────────────────────
+function createTikiTorch(x,z){
+  // Only skip positions completely off the island (not in terrain map at all)
+  if(terrain.get(`${Math.round(x)},${Math.round(z)}`) === undefined) return;
+  const g=new THREE.Group();
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(.055,.085,.7,6),MAT.bamboPole); pole.position.y=.35;
+  const bowl=new THREE.Mesh(new THREE.CylinderGeometry(.22,.12,.28,7),MAT.bowlMat); bowl.position.y=.84;
+  const rim=new THREE.Mesh(new THREE.CylinderGeometry(.24,.24,.05,7),new THREE.MeshStandardMaterial({color:'#2a1e0c'})); rim.position.y=.96;
+  const flameC=new THREE.Mesh(new THREE.ConeGeometry(.09,.3,6),EMIT.torchFlame); flameC.position.y=1.16;
+  const flameO=new THREE.Mesh(new THREE.ConeGeometry(.15,.42,6),EMIT.torchOuter); flameO.position.y=1.20;
+  g.add(pole,bowl,rim,flameC,flameO);
+  g.position.set(x,getH(x,z),z);
+  scene.add(g);
+}
+
+// ── Red lantern string (emissive only) ────────────────────────────────────────
+// Lantern groups registered here so wind can swing them in unison
+const lanternGroups = []; // { group, pivotY, phase }
+
+function createLanternString(ax,az,bx,bz,count=5,h=7){
+  const postMat=new THREE.MeshStandardMaterial({color:'#2a2218',roughness:.8});
+  const ropeMat=new THREE.MeshStandardMaterial({color:'#3a3020',roughness:.95});
+  const ay=getH(ax,az)+h, by=getH(bx,bz)+h;
+
+  // Compute all lantern world positions first so we can draw rope between them
+  const pts=[]; // {x,y,z} for each i from 0..count
+  for(let i=0;i<=count;i++){
+    const t=i/count;
+    const lx=ax+(bx-ax)*t, lz=az+(bz-az)*t;
+    const sag=Math.sin(t*Math.PI)*2.8;
+    const ly=ay+(by-ay)*t-sag;
+    pts.push({x:lx, y:ly, z:lz});
+  }
+
+  // Draw posts at endpoints
+  [0,count].forEach(i=>{
+    const {x,y,z}=pts[i];
+    const gy=getH(x,z);
+    const postH=Math.max(1.5,y-gy+.2);
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(.12,.15,postH,7),postMat);
+    post.position.set(x,gy+postH/2,z); scene.add(post);
+  });
+
+  // Draw rope segments between every adjacent pair of points
+  for(let i=0;i<count;i++){
+    const a=pts[i], b=pts[i+1];
+    const dx=b.x-a.x, dy=b.y-a.y, dz=b.z-a.z;
+    const len=Math.sqrt(dx*dx+dy*dy+dz*dz);
+    const rope=new THREE.Mesh(new THREE.CylinderGeometry(.022,.022,len,4),ropeMat);
+    // Position at midpoint, orient along segment
+    rope.position.set((a.x+b.x)/2,(a.y+b.y)/2,(a.z+b.z)/2);
+    rope.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0,1,0),
+      new THREE.Vector3(dx,dy,dz).normalize()
+    );
+    scene.add(rope);
+  }
+
+  // Draw lanterns
+  for(let i=1;i<count;i++){
+    const {x,y,z}=pts[i];
+    const lg=new THREE.Group();
+    const body=new THREE.Mesh(new THREE.CylinderGeometry(.38,.38,.9,8),EMIT.lanternBody);
+    body.position.y=-.95;
+    const topC=new THREE.Mesh(new THREE.CylinderGeometry(.22,.38,.18,8),postMat); topC.position.y=-.41;
+    const botC=new THREE.Mesh(new THREE.CylinderGeometry(.38,.22,.18,8),postMat); botC.position.y=-1.49;
+    const glw=new THREE.Mesh(new THREE.SphereGeometry(.26,6,6),EMIT.lanternGlow); glw.position.y=-.95;
+    // Tiny string connecting rope to lantern top so the pivot reads visually
+    const stringMat=new THREE.MeshStandardMaterial({color:'#2a2218',roughness:.9});
+    const str_=new THREE.Mesh(new THREE.CylinderGeometry(.015,.015,.4,4),stringMat); str_.position.y=-.2;
+    lg.add(body,topC,botC,glw,str_);
+    // Group sits AT the rope point — children are offset down — so rotating
+    // the group swings the whole lantern like a pendulum from the rope
+    lg.position.set(x,y,z);
+    scene.add(lg);
+    lanternGroups.push({group:lg, pivotY:y, phase:Math.random()*Math.PI*2});
+  }
+}
+
+// ── Bamboo grove (instanced) ──────────────────────────────────────────────────
+// Bamboo groves registered here so wind sway can animate them cheaply
+const bambooGroves = []; // { culmM, count, baseX:[], baseZ:[], baseY:[], baseH:[], phase:[] }
+
+function createBambooGrove(cx,cz,count=IS_MOBILE?8:18){
+  const culmG=new THREE.CylinderGeometry(.12,.15,7,5);
+  const nodeG=new THREE.CylinderGeometry(.18,.18,.2,5);
+  const dummy=new THREE.Object3D();
+  const culmM=new THREE.InstancedMesh(culmG,MAT.bam,count);
+  const nodeM=new THREE.InstancedMesh(nodeG,MAT.bamDark,count*2);
+
+  const baseX=[],baseZ=[],baseY=[],baseH=[],phase=[];
+  for(let i=0;i<count;i++){
+    const a=Math.random()*Math.PI*2, r=Math.random()*4.5;
+    const x=cx+Math.cos(a)*r, z=cz+Math.sin(a)*r;
+    const y=getH(x,z), h=5+Math.random()*3;
+    baseX.push(x); baseZ.push(z); baseY.push(y); baseH.push(h);
+    phase.push(Math.random()*Math.PI*2);
+    dummy.position.set(x,y+h/2,z); dummy.scale.set(1,h/7,1);
+    dummy.rotation.set((Math.random()-.5)*.1,Math.random()*Math.PI*2,(Math.random()-.5)*.1);
+    dummy.updateMatrix(); culmM.setMatrixAt(i,dummy.matrix);
+    [.35,.65].forEach((f,ni)=>{
+      dummy.position.set(x,y+h*f,z); dummy.scale.setScalar(1); dummy.rotation.set(0,0,0);
+      dummy.updateMatrix(); nodeM.setMatrixAt(i*2+ni,dummy.matrix);
+    });
+  }
+  culmM.instanceMatrix.needsUpdate=nodeM.instanceMatrix.needsUpdate=true;
+  scene.add(culmM,nodeM);
+
+  bambooGroves.push({culmM, count, baseX, baseZ, baseY, baseH, phase});
+}
+
+// ── Simple tree (no per-tree light, no petals) ────────────────────────────────
+function createTree(x,z){
+  const g=new THREE.Group();
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.2,.3,2.5,6),MAT.wood); trunk.position.y=1.25;
+  const pinkMat=new THREE.MeshStandardMaterial({color:'#f4a0c0',roughness:.9});
+  const pinkDark=new THREE.MeshStandardMaterial({color:'#d46090',roughness:.9});
+  [[0,3.8,0,2.2],[1.2,3.2,.8,1.6],[-1.0,3.0,.5,1.4],[.4,4.4,-.6,1.8],[-1.4,3.5,-.8,1.3]].forEach(([bx,by,bz,r])=>{
+    const cloud=new THREE.Mesh(new THREE.DodecahedronGeometry(r,0),Math.random()>.4?pinkMat:pinkDark);
+    cloud.position.set(bx,by,bz); g.add(cloud);
+  });
+  g.add(trunk);
+  g.position.set(x,getH(x,z),z);
+  scene.add(g);
+}
+
+// ── Firepit (emissive only) ───────────────────────────────────────────────────
+function createFirepit(x,z){
+  const g=new THREE.Group();
+  const ring=new THREE.Mesh(new THREE.CylinderGeometry(1.4,1.5,.3,10),MAT.stone); ring.position.y=.15;
+  const logs=new THREE.Mesh(new THREE.CylinderGeometry(.3,.4,.8,6),MAT.wood); logs.position.y=.5;
+  const fire=new THREE.Mesh(new THREE.ConeGeometry(.45,.9,7),EMIT.fireCore); fire.position.y=1.0;
+  const outer=new THREE.Mesh(new THREE.ConeGeometry(.65,1.2,7),EMIT.torchOuter); outer.position.y=1.1;
+  g.add(ring,logs,fire,outer);
+  g.position.set(x,getH(x,z),z);
+  scene.add(g);
+}
+
+// ── Simple shrine ─────────────────────────────────────────────────────────────
+function createShrine(x,z){
+  const g=new THREE.Group();
+  const plinth=new THREE.Mesh(new THREE.BoxGeometry(5,.5,4),MAT.stone); plinth.position.y=.25;
+  const floor=new THREE.Mesh(new THREE.BoxGeometry(4,.2,3),MAT.wood); floor.position.y=.6;
+  [[-.15,0,-1.0],[1.5,0,-1.0],[-.15,0,1.0],[1.5,0,1.0]].forEach(([px,,pz])=>{
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(.14,.17,2.4,6),MAT.red); post.position.set(px,1.8,pz); g.add(post);
+  });
+  const roof=new THREE.Mesh(new THREE.BoxGeometry(5,.2,3.8),MAT.darkRed); roof.position.y=3.3;
+  const ridge=new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,5.2,5),MAT.darkRed); ridge.position.y=3.55; ridge.rotation.z=Math.PI/2;
+  g.add(plinth,floor,roof,ridge);
+  g.position.set(x,getH(x,z),z);
+  scene.add(g);
+}
+
+// ── Elevated cabin — stilted hut with blue-toned walls + peaked shingle roof,
+// the village dwellings lining the path on both sides ────────────────────────
+function createCabin(x,z,rotY=0,scale=1){
+  const g=new THREE.Group();
+  const y=getH(x,z);
+  const legH=1.5+Math.random()*.6;
+
+  [[-.9,-.7],[.9,-.7],[-.9,.7],[.9,.7]].forEach(([lx,lz])=>{
+    const leg=new THREE.Mesh(new THREE.CylinderGeometry(.09,.12,legH,5),MAT.wood);
+    leg.position.set(lx,legH/2,lz); g.add(leg);
+  });
+  const platform=new THREE.Mesh(new THREE.BoxGeometry(2.4,.22,2.0),MAT.wood);
+  platform.position.y=legH+.11; g.add(platform);
+
+  const wallMat=new THREE.MeshStandardMaterial({color:'#3d4f7a',emissive:'#1a2240',emissiveIntensity:0,roughness:.85});
+  NIGHT_MATS.push(wallMat);
+  const wall=new THREE.Mesh(new THREE.BoxGeometry(2.0,1.3,1.7),wallMat);
+  wall.position.y=legH+.22+.65; g.add(wall);
+
+  const trim=new THREE.Mesh(new THREE.BoxGeometry(2.15,.2,1.85),MAT.wood);
+  trim.position.y=legH+.22+.1; g.add(trim);
+
+  const roof=new THREE.Mesh(new THREE.ConeGeometry(1.7,1.2,4),MAT.roof);
+  roof.rotation.y=Math.PI/4;
+  roof.position.y=legH+.22+1.3+.6; g.add(roof);
+
+  const win=new THREE.Mesh(new THREE.BoxGeometry(.4,.4,.06),EMIT.lampGlow);
+  win.position.set(0,legH+.22+.7,.86); g.add(win);
+
+  for(let i=0;i<4;i++){
+    const rung=new THREE.Mesh(new THREE.BoxGeometry(.5,.06,.06),MAT.wood);
+    rung.position.set(0,.3+i*(legH/4),1.1); g.add(rung);
+  }
+
+  g.scale.setScalar(scale);
+  g.rotation.y=rotY;
+  g.position.set(x,y,z);
+  scene.add(g);
+}
+
+// ── Central treehouse — taller two-tier structure with a spire, the focal
+// point at the far end of the path where the path meets the mountain ────────
+function createTreehouse(x,z){
+  const g=new THREE.Group();
+  const y=getH(x,z);
+  const legH1=2.2;
+
+  [[-1.3,-1.1],[1.3,-1.1],[-1.3,1.1],[1.3,1.1]].forEach(([lx,lz])=>{
+    const leg=new THREE.Mesh(new THREE.CylinderGeometry(.13,.17,legH1,6),MAT.wood);
+    leg.position.set(lx,legH1/2,lz); g.add(leg);
+  });
+  const plat1=new THREE.Mesh(new THREE.BoxGeometry(3.4,.26,2.8),MAT.wood);
+  plat1.position.y=legH1+.13; g.add(plat1);
+
+  const wallMat=new THREE.MeshStandardMaterial({color:'#3d4f7a',emissive:'#1a2240',emissiveIntensity:0,roughness:.85});
+  NIGHT_MATS.push(wallMat);
+  const wall1=new THREE.Mesh(new THREE.BoxGeometry(2.9,1.6,2.4),wallMat);
+  wall1.position.y=legH1+.26+.8; g.add(wall1);
+
+  const roof1=new THREE.Mesh(new THREE.ConeGeometry(2.3,1.5,4),MAT.roof);
+  roof1.rotation.y=Math.PI/4; roof1.position.y=legH1+.26+1.6+.75; g.add(roof1);
+
+  const tier2Y = legH1+.26+1.6+1.5+.3;
+  const wall2=new THREE.Mesh(new THREE.BoxGeometry(1.6,1.1,1.4),wallMat);
+  wall2.position.y=tier2Y+.55; g.add(wall2);
+  const roof2=new THREE.Mesh(new THREE.ConeGeometry(1.3,1.0,4),MAT.roof);
+  roof2.rotation.y=Math.PI/4; roof2.position.y=tier2Y+1.1+.5; g.add(roof2);
+
+  const spire=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,1.4,5),MAT.iron);
+  spire.position.y=tier2Y+1.1+1.0+.7; g.add(spire);
+
+  [1.46,-1.46].forEach(wx=>{
+    const win=new THREE.Mesh(new THREE.BoxGeometry(.06,.5,.5),EMIT.lampGlow);
+    win.position.set(wx,legH1+.26+.85,0); g.add(win);
+  });
+
+  g.position.set(x,y,z);
+  scene.add(g);
+}
+
+// ── Mossy ruins — a small tumbled rock pile beside the path ──────────────────
+function createRuins(x,z){
+  const y=getH(x,z);
+  const g=new THREE.Group();
+  const mossMat=new THREE.MeshStandardMaterial({color:'#5d8a4a',emissive:'#23381c',emissiveIntensity:0,roughness:.95});
+  NIGHT_MATS.push(mossMat);
+  [[0,0,1.1,1.4],[.6,.4,.8,1.0],[-.5,.5,.7,.9],[.2,1.0,.55,.7],[-.3,-.5,.6,.8]].forEach(([bx,bz,s,h])=>{
+    const blk=new THREE.Mesh(new THREE.BoxGeometry(s,h,s),MAT.stone);
+    blk.position.set(bx,h/2,bz);
+    blk.rotation.y=Math.random()*0.6;
+    g.add(blk);
+    const moss=new THREE.Mesh(new THREE.BoxGeometry(s*.9,.08,s*.9),mossMat);
+    moss.position.set(bx,h+.04,bz); g.add(moss);
+  });
+  g.position.set(x,y,z);
+  scene.add(g);
+}
+
+// ── Simple dock ───────────────────────────────────────────────────────────────
+function createDock(x,z,angle=0){
+  const g=new THREE.Group();
+  const plankMat=new THREE.MeshStandardMaterial({color:'#7a5c3a',roughness:.95});
+  const postMat=new THREE.MeshStandardMaterial({color:'#5a3c20',roughness:.98});
+  for(let i=0;i<6;i++){
+    const p=new THREE.Mesh(new THREE.BoxGeometry(.9,.1,1.0),plankMat);
+    p.position.set(0,.05,i*1.08); g.add(p);
+  }
+  [-.38,.38].forEach(side=>{
+    const pile=new THREE.Mesh(new THREE.CylinderGeometry(.07,.09,2.2,5),postMat);
+    pile.position.set(side,-1.05,2.7); g.add(pile);
+  });
+  g.rotation.y=angle; g.position.set(x,getH(x,z),z);
+  scene.add(g);
+}
+
+// ── Wind sock — fills out and points downwind when wind is toggled on ─────────
+let windSock = null;
+function createWindSock(x,z){
+  const y=getH(x,z);
+  const group=new THREE.Group();
+
+  const poleMat=new THREE.MeshStandardMaterial({color:'#5a3c20',roughness:.9});
+  const ringMat=new THREE.MeshStandardMaterial({color:'#d8d4c8',roughness:.7});
+  const stripeA=new THREE.MeshStandardMaterial({color:'#e8501a',emissive:'#8a2a0a',emissiveIntensity:.15,roughness:.85});
+  const stripeB=new THREE.MeshStandardMaterial({color:'#f0eee6',emissive:'#888278',emissiveIntensity:.1,roughness:.85});
+
+  // Pole
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(.06,.08,3.2,6),poleMat);
+  pole.position.y=1.6; group.add(pole);
+  // Mount ring at top — sock hangs from here, oriented so its hole faces along Z
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(.16,.03,5,10),ringMat);
+  ring.position.y=3.15; group.add(ring);
+
+  // Sock body — a CHAIN of pivot groups, each holding one tapered tube segment.
+  // Each pivot rotates independently so the whole sock can droop straight down
+  // when calm, or swing up toward horizontal (pointing downwind) when windy —
+  // exactly like a real beach windsock filling with air.
+  const SEG_COUNT=5;
+  const pivots=[]; // one Object3D per segment, chained parent->child
+  let parent=group;
+  let attachY=3.15; // start at the ring
+  for(let i=0;i<SEG_COUNT;i++){
+    const t0=i/SEG_COUNT, t1=(i+1)/SEG_COUNT;
+    const r0=.20*(1-t0*.65), r1=.20*(1-t1*.65); // tapers toward the tail
+    const segLen=.55;
+
+    // Pivot sits at the attach point; segment mesh hangs/extends from it along -Y locally,
+    // then we rotate the WHOLE pivot to point the segment in any direction we want
+    const pivot=new THREE.Group();
+    pivot.position.y = (i===0) ? attachY : segLen; // first pivot at ring, rest chained by parent's local offset
+    const segGeo=new THREE.CylinderGeometry(r1,r0,segLen,8,1,true);
+    segGeo.translate(0,-segLen/2,0); // shift so geometry extends downward from the pivot's origin
+    const seg=new THREE.Mesh(segGeo, i%2===0?stripeA:stripeB);
+    pivot.add(seg);
+    parent.add(pivot);
+    pivots.push(pivot);
+    parent=pivot;
+  }
+
+  group.position.set(x,y,z);
+  scene.add(group);
+  windSock = {group, pivots};
+}
+
+// ── Rocks (instanced) ─────────────────────────────────────────────────────────
+function createRocks(){
+  const rockMat=new THREE.MeshStandardMaterial({color:'#7a7a72',roughness:.95});
+  const geo=new THREE.DodecahedronGeometry(.6,0);
+  const COUNT=IS_MOBILE?20:35;
+  const dummy=new THREE.Object3D();
+  const mesh=new THREE.InstancedMesh(geo,rockMat,COUNT);
+  let placed=0;
+  for(let attempt=0;attempt<400&&placed<COUNT;attempt++){
+    const a=Math.random()*Math.PI*2, r=4+Math.random()*28;
+    const x=Math.cos(a)*r, z=Math.sin(a)*r, y=getH(x,z);
+    if(y<2) continue;
+    const s=.4+Math.random()*.8;
+    dummy.position.set(x,y+.1,z); dummy.scale.setScalar(s);
+    dummy.rotation.set(Math.random()*Math.PI,Math.random()*Math.PI,Math.random()*Math.PI);
+    dummy.updateMatrix(); mesh.setMatrixAt(placed++,dummy.matrix);
+  }
+  mesh.count=placed; mesh.instanceMatrix.needsUpdate=true;
+  scene.add(mesh);
+}
+
+// ── Time of day ───────────────────────────────────────────────────────────────
+function applyTime(){
+  const now=new Date(), hour=now.getHours()+now.getMinutes()/60;
+  let day; if(hour<5)day=0; else if(hour<7)day=(hour-5)/2; else if(hour<18)day=1; else if(hour<20)day=1-(hour-18)/2; else day=0;
+  const night=1-day;
+  const golden=Math.max(
+    (hour>4.5&&hour<7.5)?Math.sin((hour-4.5)/3*Math.PI):0,
+    (hour>17&&hour<21)?Math.sin((hour-17)/4*Math.PI):0
+  );
+  // Sky — gradient dome (top → horizon), kept light and saturated rather than
+  // going near-black at night, echoing the bright dusk-blue reference palette
+  const topDay=new THREE.Color('#3a86c8'), topNight=new THREE.Color('#1c3160');
+  const botDay=new THREE.Color('#f6dfe8'), botNight=new THREE.Color('#3c4f86');
+  const top=new THREE.Color().lerpColors(topNight,topDay,day);
+  const bot=new THREE.Color().lerpColors(botNight,botDay,day);
+  if(golden>.01){ top.lerp(new THREE.Color('#e8744a'),golden*.5); bot.lerp(new THREE.Color('#ffd9c2'),golden*.6); }
+  skyMat.uniforms.topColor.value.copy(top);
+  skyMat.uniforms.botColor.value.copy(bot);
+  scene.background=bot; scene.fog.color.copy(bot);
+  starMat.opacity = night*0.8;
+  // Warm amber tint at night (0.55), fully off during day
+  const nightEmissive = night * 0.55;
+  NIGHT_MATS.forEach(m => { m.emissiveIntensity = nightEmissive; });
+
+  // Hemi — warm amber floor at night, strong enough to read ground voxels
+  hemi.intensity = night * 2.2 + day * 1.8;
+  const nightHemiCol = new THREE.Color('#4a3010');
+  const dayHemiCol   = new THREE.Color('#6ab4f5');
+  hemi.color.lerpColors(nightHemiCol, dayHemiCol, day);
+  if(golden>.01) hemi.color.lerp(new THREE.Color('#ff6622'),golden*.6);
+  hemi.groundColor.lerpColors(new THREE.Color('#3a2808'), new THREE.Color('#3a6a30'), day);
+  // Sun
+  sun.intensity=day*1.8+golden*.5;
+  sun.color.lerpColors(new THREE.Color('#8899cc'),new THREE.Color('#fff8e0'),day);
+  if(golden>.2) sun.color.lerp(new THREE.Color('#ff7700'),golden*.8);
+  // Night fill — close to ground, warm streetlamp yellow
+  nightFill.intensity = night * 4.5;
+  nightFill.position.y = 18;
+  nightFill2.intensity = night * 3.0;
+  // Exposure — significantly brighter at night
+  renderer.toneMappingExposure=(1.1 + day*.2) * AMB.brightness;
+  // UI panel opacity — aggressive during day so text is always readable.
+  // Applies to the glass surfaces only — the todo card stays solid white.
+  const panelAlpha = (0.16 + day * 0.1).toFixed(2);
+  const barAlpha   = (0.16 + day * 0.12).toFixed(2);
+  const panelBg = `rgba(255,255,255,${panelAlpha})`;
+  const barBg   = `rgba(255,255,255,${barAlpha})`;
+  const ambPanel = document.getElementById('amb-panel');
+  if(ambPanel) ambPanel.style.background = panelBg;
+  const taskBar = document.getElementById('task-bar');
+  if(taskBar) taskBar.style.background = barBg;
+  const settingsFabEl = document.getElementById('settings-fab');
+  if(settingsFabEl) settingsFabEl.style.background = barBg;
+  const badge=document.getElementById('time-badge');
+  if(badge){
+    const ts=now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const tzShort=now.toLocaleTimeString([],{timeZoneName:'short'}).split(' ').pop();
+    const dateStr=now.toLocaleDateString([],{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+    badge.textContent=dateStr+' · '+ts+' · '+tzShort;
+  }
+}
+
+// ── Build world ───────────────────────────────────────────────────────────────
+buildTerrain();
+createRocks();
+
+// Houses are task-driven — spawned by buildTaskHouses(). The village fills in
+// as tasks are added, and each house finishes/lights up when its task is done.
+
+// Forest clusters form a backdrop wall further up the slopes, framing the
+// houses that sit closer to the river. Offsets are measured from the river's
+// centreline at that z, so they stay correctly banked as it winds.
+createForestCluster(riverCenterX(16)-18,16);
+createForestCluster(riverCenterX(2)-18,2);
+createForestCluster(riverCenterX(-14)-18,-14);
+createForestCluster(riverCenterX(14)+18,14);
+createForestCluster(riverCenterX(0)+18,0);
+createForestCluster(riverCenterX(-14)+18,-14);
+
+// Central treehouse — the focal point at the far end of the river
+createTreehouse(riverCenterX(-26),-26);
+
+// Mossy ruins beside the path near the entrance
+createRuins(riverCenterX(18)+4.2,18);
+
+// Campfire near the path's entrance, opposite the ruins
+createFirepit(riverCenterX(20)-4,20);
+
+// Footbridges crossing the river
+createBridge(12);
+createBridge(-2);
+createBridge(-16);
+
+// Torches lining the riverbank, lighting the crossings
+[[-5.8,16],[5.8,16],[-5.8,4],[5.8,4],[-5.8,-8],[5.8,-8],[-5.8,-18],[5.8,-18]]
+  .forEach(([ox,z])=>createTikiTorch(riverCenterX(z)+ox,z));
+
+// ── Ambience panel — simple sliders ────────────────────────────────────────────
+const SEGS_COUNT = 8;
+const SLIDERS=[
+  {key:'brightness', label:'Brightness', min:.2, max:2,  fmt:v=>Math.round(v*100)+'%', color:'#ffd27a'},
+  {key:'fogDensity',  label:'Fog',         min:.1, max:4,  fmt:v=>v.toFixed(1)+'×',      color:'#9fc3e8'},
+];
+const defaults={...AMB};
+const apRows=document.getElementById('ap-rows');
+
+function valToSegCount(val,min,max){
+  return Math.max(1, Math.min(SEGS_COUNT, Math.round(((val-min)/(max-min))*SEGS_COUNT)));
+}
+function segCountToVal(n,min,max){
+  return min + (n/SEGS_COUNT)*(max-min);
+}
+
+// Each slider is a single-row pill: fixed-width label · dot track (flex) · value.
+// Only the current value renders as a distinct tick; the rest are neutral dots.
+SLIDERS.forEach(({key,label,min,max,fmt,color})=>{
+  const row=document.createElement('div'); row.className='ap-row';
+  const filled = valToSegCount(AMB[key],min,max);
+
+  let segsHTML='';
+  for(let i=0;i<SEGS_COUNT;i++){
+    segsHTML+=`<div class="ap-seg${i===filled-1?' peak':''}" data-i="${i}"></div>`;
+  }
+
+  row.innerHTML=`
+    <span class="ap-lbl-text">${label}</span>
+    <div class="ap-segs" id="segs-${key}">${segsHTML}</div>
+    <span class="ap-val" id="v-${key}">${fmt(AMB[key])}</span>`;
+  apRows.appendChild(row);
+
+  const segsEl = row.querySelector('.ap-segs');
+
+  function setFromClientX(clientX){
+    const rect = segsEl.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const n = Math.max(1, Math.min(SEGS_COUNT, Math.ceil(ratio * SEGS_COUNT)));
+    AMB[key] = segCountToVal(n, min, max);
+    document.getElementById('v-'+key).textContent = fmt(AMB[key]);
+    [...segsEl.children].forEach((seg,i)=>{
+      seg.classList.toggle('peak', i === n-1);
+    });
+    applyTime();
+  }
+
+  let dragging=false;
+  segsEl.addEventListener('pointerdown', e=>{ dragging=true; segsEl.setPointerCapture(e.pointerId); setFromClientX(e.clientX); });
+  segsEl.addEventListener('pointermove', e=>{ if(dragging) setFromClientX(e.clientX); });
+  segsEl.addEventListener('pointerup',   ()=>{ dragging=false; });
+  segsEl.addEventListener('pointercancel',()=>{ dragging=false; });
+});
+
+// ── Rain + Wind — merged into one row so two booleans don't each claim a
+// full-width pill of their own ────────────────────────────────────────────────
+const weatherRow=document.createElement('div'); weatherRow.className='ap-row';
+weatherRow.innerHTML=`
+  <span class="ap-lbl-text">Rain</span>
+  <button class="ap-toggle" id="rain-toggle" role="switch" aria-checked="${AMB.rain}">
+    <span class="ap-toggle-knob"></span>
+  </button>
+  <div class="ap-row-divider"></div>
+  <span class="ap-lbl-text" style="width:auto;flex:1">Wind</span>
+  <button class="ap-toggle" id="wind-toggle" role="switch" aria-checked="${AMB.wind}">
+    <span class="ap-toggle-knob"></span>
+  </button>`;
+apRows.appendChild(weatherRow);
+
+const rainToggleBtn = document.getElementById('rain-toggle');
+rainToggleBtn.classList.toggle('on', AMB.rain);
+rainToggleBtn.addEventListener('click', ()=>{
+  AMB.rain = !AMB.rain;
+  rainToggleBtn.classList.toggle('on', AMB.rain);
+  rainToggleBtn.setAttribute('aria-checked', AMB.rain);
+  rainMesh.visible = AMB.rain;
+});
+
+const windToggleBtn = document.getElementById('wind-toggle');
+windToggleBtn.classList.toggle('on', AMB.wind);
+windToggleBtn.addEventListener('click', ()=>{
+  AMB.wind = !AMB.wind;
+  windToggleBtn.classList.toggle('on', AMB.wind);
+  windToggleBtn.setAttribute('aria-checked', AMB.wind);
+  if(!AMB.wind) resetWind();
+});
+
+// ── Task Labels — persistent house-name overlay, now lives in Ambience ───────
+const labelsRow=document.createElement('div'); labelsRow.className='ap-row';
+labelsRow.innerHTML=`
+  <span class="ap-lbl-text" style="width:auto;flex:1">Task Labels</span>
+  <button class="ap-toggle" id="labels-toggle" role="switch" aria-checked="${labelsAlwaysOn}">
+    <span class="ap-toggle-knob"></span>
+  </button>`;
+apRows.appendChild(labelsRow);
+const labelsToggleBtn = document.getElementById('labels-toggle');
+labelsToggleBtn.classList.toggle('on', labelsAlwaysOn);
+labelsToggleBtn.addEventListener('click', ()=>{
+  labelsAlwaysOn = !labelsAlwaysOn;
+  labelsToggleBtn.classList.toggle('on', labelsAlwaysOn);
+  labelsToggleBtn.setAttribute('aria-checked', labelsAlwaysOn);
+  buildPersistentLabels();
+  updatePersistentLabelPositions();
+});
+
+// ── Clear Finished Homes — removes completed tasks (the built houses),
+// leaves pending tasks alone. Uses a tap-twice confirm instead of the native
+// confirm() dialog, since sandboxed/embedded previews often block or auto-
+// dismiss window.confirm(), which made the button look like it did nothing.
+const clearRow=document.createElement('div'); clearRow.className='ap-row';
+clearRow.innerHTML=`
+  <span class="ap-lbl-text" style="width:auto;flex:1">Clear Finished Homes</span>
+  <button class="ap-danger" id="clear-homes" title="Remove completed homes">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+      <line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
+    </svg>
+  </button>`;
+apRows.appendChild(clearRow);
+
+const clearHomesBtn = document.getElementById('clear-homes');
+let clearConfirmTimer = null;
+
+function resetClearHomesBtn(){
+  clearHomesBtn.classList.remove('confirming');
+  clearHomesBtn.title = 'Remove completed homes';
+  clearHomesBtn.innerHTML = `
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+      <line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
+    </svg>`;
+}
+
+clearHomesBtn.addEventListener('click', e=>{
+  e.stopPropagation();
+  const doneCount = todos.filter(t=>t.done).length;
+  if(doneCount === 0) return;
+
+  if(!clearHomesBtn.classList.contains('confirming')){
+    // First tap — arm the button and wait for a confirming second tap
+    clearHomesBtn.classList.add('confirming');
+    clearHomesBtn.title = `Tap again to remove ${doneCount} finished home${doneCount===1?'':'s'}`;
+    clearHomesBtn.innerHTML = `
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 6L9 17l-5-5"/>
+      </svg>`;
+    clearTimeout(clearConfirmTimer);
+    clearConfirmTimer = setTimeout(resetClearHomesBtn, 3000);
+    return;
+  }
+
+  // Second tap within the window — actually remove completed tasks
+  clearTimeout(clearConfirmTimer);
+  todos = todos.filter(t=>!t.done);
+  saveTodos();
+  renderTodos();
+  resetClearHomesBtn();
+});
+
+document.getElementById('ap-reset').addEventListener('click', ()=>{
+  Object.assign(AMB,defaults);
+  SLIDERS.forEach(({key,min,max,fmt})=>{
+    const n = valToSegCount(AMB[key],min,max);
+    document.getElementById('v-'+key).textContent=fmt(AMB[key]);
+    const segsEl=document.getElementById('segs-'+key);
+    [...segsEl.children].forEach((seg,i)=>{
+      seg.classList.toggle('peak', i === n-1);
+    });
+  });
+  rainToggleBtn.classList.toggle('on', AMB.rain);
+  rainToggleBtn.setAttribute('aria-checked', AMB.rain);
+  rainMesh.visible = AMB.rain;
+  windToggleBtn.classList.toggle('on', AMB.wind);
+  windToggleBtn.setAttribute('aria-checked', AMB.wind);
+  if(!AMB.wind) resetWind();
+  applyTime();
+});
+
+// ── Settings trigger — a separate, dedicated FAB (not the status badge) ──────
+const settingsFab=document.getElementById('settings-fab'), panel=document.getElementById('amb-panel');
+settingsFab.addEventListener('click', e=>{
+  e.stopPropagation();
+  const opening = panel.classList.contains('hidden');
+  document.getElementById('todo-panel').classList.add('hidden');
+  panel.classList.toggle('hidden', !opening);
+});
+
+applyTime();
+setInterval(applyTime, 60000);
+
+// ── Todo ──────────────────────────────────────────────────────────────────────
+// ── Tanzaku wish-strip pole ───────────────────────────────────────────────────
+// Planted near the shrine at (-18, 14)
+const TANZAKU_Z = -22;
+const TANZAKU_X = riverCenterX(TANZAKU_Z) + 3;
+const tanzakuGroup = new THREE.Group();
+
+// Bamboo pole
+const tPole = new THREE.Mesh(new THREE.CylinderGeometry(.08,.11,5.5,6), MAT.bam);
+tPole.position.y = 2.75;
+tanzakuGroup.add(tPole);
+// Crossbar
+const tBar = new THREE.Mesh(new THREE.CylinderGeometry(.05,.05,2.2,5), MAT.bamDark);
+tBar.rotation.z = Math.PI/2; tBar.position.y = 5.1;
+tanzakuGroup.add(tBar);
+// Node rings
+[1.2, 2.5, 3.8].forEach(y=>{
+  const node = new THREE.Mesh(new THREE.CylinderGeometry(.13,.13,.1,6), MAT.bamDark);
+  node.position.y = y; tanzakuGroup.add(node);
+});
+
+tanzakuGroup.position.set(TANZAKU_X, getH(TANZAKU_X, TANZAKU_Z), TANZAKU_Z);
+scene.add(tanzakuGroup);
+
+// Strip colours — pending are vivid, done are muted/grey
+const STRIP_COLORS = [
+  '#e8507a','#5ab4e8','#e8c84a','#7ad478','#c87ae8',
+  '#e87850','#4ae8d4','#e8e87a','#d47ab4','#78a0e8',
+];
+const DONE_EMISSIVE = '#303030';
+const stripMeshes = []; // parallel to todos array
+
+function buildStrips(){
+  // Remove old strip meshes
+  stripMeshes.forEach(m=>tanzakuGroup.remove(m));
+  stripMeshes.length = 0;
+
+  const MAX = 10; // cap at 10 strips so it doesn't get absurd
+  const visible = todos.slice(0, MAX);
+  const total = visible.length;
+
+  visible.forEach((t, i)=>{
+    const col = STRIP_COLORS[i % STRIP_COLORS.length];
+    const mat = new THREE.MeshStandardMaterial({
+      color: t.done ? '#888' : col,
+      emissive: t.done ? DONE_EMISSIVE : col,
+      emissiveIntensity: t.done ? 0.08 : 0.55,
+      roughness: .8,
+    });
+
+    // Hang position along crossbar — spread across -0.9 to +0.9
+    const spread = total > 1 ? (i/(total-1)) * 1.8 - 0.9 : 0;
+    // Slight random dangle offset per strip (seeded from id)
+    const seed = (t.id || i) % 100;
+    const sway = (seed/100 - 0.5) * 0.18;
+    const hang = 0.28 + (seed % 5) * 0.06; // how far below bar
+
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(.13,.48,.025), mat);
+    strip.position.set(spread, 5.1 - hang, 0);
+    strip.rotation.z = sway;
+
+    // Tiny string connecting strip to bar
+    const string = new THREE.Mesh(
+      new THREE.CylinderGeometry(.008,.008, hang, 3),
+      new THREE.MeshStandardMaterial({color:'#c8c0a0'})
+    );
+    string.position.set(spread, 5.1 - hang/2, 0);
+
+    tanzakuGroup.add(string, strip);
+    stripMeshes.push(string, strip);
+  });
+}
+
+// ── Todo logic ────────────────────────────────────────────────────────────────
+const STORE_KEY = 'vg-todos';
+let todos = [];
+try { todos = JSON.parse(localStorage.getItem(STORE_KEY)) || []; } catch(e){ todos=[]; }
+
+function saveTodos(){
+  localStorage.setItem(STORE_KEY, JSON.stringify(todos));
+  buildStrips();
+  buildTaskHouses();
+}
+
+function fmtDate(ts){
+  if(!ts) return '';
+  return new Date(ts).toLocaleDateString([],{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+}
+
+let completedOpen = false; // module-level state — collapsed by default
+
+function makeTodoItem(t,i){
+  const item = document.createElement('div');
+  item.className = 'td-item' + (t.done?' done':'');
+  const dateLabel = t.done && t.completedAt
+    ? `Completed ${fmtDate(t.completedAt)}`
+    : `Planted ${fmtDate(t.createdAt || t.id)}`;
+  item.innerHTML = `
+    <div class="td-check">${t.done?'✓':''}</div>
+    <div class="td-body">
+      <span class="td-text">${t.text.replace(/</g,'&lt;')}</span>
+      <span class="td-date">${dateLabel}</span>
+    </div>
+    <button class="td-del" data-i="${i}">×</button>`;
+  item.querySelector('.td-check').addEventListener('click',()=>{ todos[i].done=!todos[i].done; todos[i].completedAt=todos[i].done?Date.now():null; saveTodos(); renderTodos(); });
+  item.querySelector('.td-text').addEventListener('click',()=>{ todos[i].done=!todos[i].done; todos[i].completedAt=todos[i].done?Date.now():null; saveTodos(); renderTodos(); });
+  item.querySelector('.td-del').addEventListener('click',e=>{ e.stopPropagation(); todos.splice(i,1); saveTodos(); renderTodos(); });
+  return item;
+}
+
+function renderTodos(){
+  const list = document.getElementById('todo-list');
+  list.innerHTML = '';
+
+  const dateEl = document.getElementById('td-date-text');
+  if(dateEl) dateEl.textContent = new Date().toLocaleDateString([],{weekday:'short',month:'long',day:'numeric',year:'numeric'});
+  const countEl = document.getElementById('td-count-text');
+  const openCount = todos.filter(t=>!t.done).length;
+  if(countEl) countEl.textContent = openCount===1 ? '1 task' : `${openCount} tasks`;
+
+  const activeIdx = [];
+  const doneIdx = [];
+  todos.forEach((t,i)=> (t.done ? doneIdx : activeIdx).push(i));
+
+  activeIdx.forEach(i=> list.appendChild(makeTodoItem(todos[i], i)));
+
+  if(doneIdx.length > 0){
+    const toggle = document.createElement('div');
+    toggle.className = 'td-completed-toggle' + (completedOpen?' open':'');
+    toggle.innerHTML = `<span>Completed · ${doneIdx.length}</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 9l6 6 6-6"/>
+      </svg>`;
+    toggle.addEventListener('click', ()=>{ completedOpen = !completedOpen; renderTodos(); });
+    list.appendChild(toggle);
+
+    if(completedOpen){
+      doneIdx.forEach(i=> list.appendChild(makeTodoItem(todos[i], i)));
+    }
+  }
+}
+
+function addTodo(){
+  const inp = document.getElementById('task-input');
+  const text = inp.value.trim();
+  if(!text) return;
+  todos.unshift({text, done:false, id:Date.now(), createdAt:Date.now()});
+  saveTodos(); renderTodos();
+  inp.value = '';
+}
+
+const taskInput = document.getElementById('task-input');
+taskInput.addEventListener('keydown', e=>{
+  if(e.key==='Enter'){ e.preventDefault(); addTodo(); }
+  if(e.key==='Tab'){
+    e.preventDefault();
+    todoPanel.classList.toggle('hidden');
+  }
+});
+// Clicking the canvas blurs the input so orbit controls work
+canvas.addEventListener('pointerdown', ()=> taskInput.blur());
+
+document.getElementById('task-submit').addEventListener('click', addTodo);
+const todoFab = document.getElementById('todo-fab');
+const todoPanel = document.getElementById('todo-panel');
+todoFab.addEventListener('click', e=>{
+  e.stopPropagation();
+  const opening = todoPanel.classList.contains('hidden');
+  todoPanel.classList.add('hidden');
+  panel.classList.add('hidden');
+  if(opening) todoPanel.classList.remove('hidden');
+});
+document.getElementById('td-add-row').addEventListener('click', e=>{
+  e.stopPropagation();
+  todoPanel.classList.add('hidden');
+  taskInput.focus();
+});
+// close button removed
+
+// Click anywhere outside panels dismisses whichever is open
+document.addEventListener('click', ()=>{
+  panel.classList.add('hidden');
+  todoPanel.classList.add('hidden');
+});
+// Prevent clicks inside panels from bubbling up
+document.getElementById('amb-panel').addEventListener('click', e=>e.stopPropagation());
+document.getElementById('todo-panel').addEventListener('click', e=>e.stopPropagation());
+
+renderTodos();
+buildStrips();
+buildTaskHouses();
+
+// ── Fireflies along the river ────────────────────────────────────────────────
+// Tiny glowing dots, instanced — one draw call, very cheap. Drift slowly along
+// the river's length and bob up and down rather than falling like petals did.
+const FIREFLY_COUNT = IS_MOBILE ? 18 : 32;
+const FIREFLY_Z_MIN = -24, FIREFLY_Z_MAX = 20; // spans the river's length
+const FIREFLY_X_SPREAD = PATH_HALF * 0.85;
+
+const petalGeo = new THREE.SphereGeometry(.07,5,5);
+const petalMat = new THREE.MeshStandardMaterial({
+  color:'#fff3a8', emissive:'#ffe066', emissiveIntensity:1.4,
+  transparent:true, opacity:.85,
+});
+const petalMesh = new THREE.InstancedMesh(petalGeo, petalMat, FIREFLY_COUNT);
+petalMesh.frustumCulled = false;
+scene.add(petalMesh);
+
+// Per-firefly state — stored in plain arrays for speed
+const petal = {
+  x: new Float32Array(FIREFLY_COUNT),
+  y: new Float32Array(FIREFLY_COUNT),
+  z: new Float32Array(FIREFLY_COUNT),
+  baseY:new Float32Array(FIREFLY_COUNT),
+  vz:new Float32Array(FIREFLY_COUNT),   // slow drift along the river
+  phase:new Float32Array(FIREFLY_COUNT),// bob/sway phase offset
+};
+
+const _petalDummy = new THREE.Object3D();
+function resetPetal(i){
+  petal.x[i] = (Math.random()-.5)*2*FIREFLY_X_SPREAD;
+  petal.z[i] = FIREFLY_Z_MIN + Math.random()*(FIREFLY_Z_MAX-FIREFLY_Z_MIN);
+  petal.baseY[i] = 1.8 + Math.random()*1.8;
+  petal.vz[i] = .01 + Math.random()*.015;
+  petal.phase[i] = Math.random()*Math.PI*2;
+}
+for(let i=0;i<FIREFLY_COUNT;i++) resetPetal(i);
+
+function tickPetals(elapsed){
+  for(let i=0;i<FIREFLY_COUNT;i++){
+    petal.z[i] += petal.vz[i];
+    if(petal.z[i] > FIREFLY_Z_MAX) petal.z[i] = FIREFLY_Z_MIN;
+    const x = petal.x[i] + Math.sin(elapsed*.4+petal.phase[i])*.6;
+    const y = petal.baseY[i] + Math.sin(elapsed*1.1+petal.phase[i])*.4;
+    _petalDummy.position.set(x, y, petal.z[i]);
+    _petalDummy.scale.setScalar(.7+Math.sin(elapsed*2+petal.phase[i])*.3);
+    _petalDummy.updateMatrix();
+    petalMesh.setMatrixAt(i, _petalDummy.matrix);
+  }
+  petalMesh.instanceMatrix.needsUpdate = true;
+}
+
+// ── Rain — toggled on/off via Ambience panel ───────────────────────────────────
+// Reuses the same lightweight instanced-mesh pattern as petals: thin
+// streak quads falling fast, spread across a wide swath of the island.
+const RAIN_COUNT = IS_MOBILE ? 60 : 140;
+const RAIN_CX = 0, RAIN_CZ = 0;     // centred on island
+const RAIN_R  = 30;                 // wide spawn radius — covers most of the island
+const RAIN_TOP = 26;                // spawn height above terrain
+const RAIN_BOT = -2;                // despawn just below water level
+
+const rainGeo = new THREE.PlaneGeometry(.045, .9); // thin vertical streak
+const rainMat = new THREE.MeshStandardMaterial({
+  color:'#bcd8ee', emissive:'#9fc3e8', emissiveIntensity:.25,
+  roughness:.3, side:THREE.DoubleSide,
+  transparent:true, opacity:.55,
+});
+const rainMesh = new THREE.InstancedMesh(rainGeo, rainMat, RAIN_COUNT);
+rainMesh.frustumCulled = false;
+rainMesh.visible = false; // hidden until toggled on
+scene.add(rainMesh);
+
+const rain = {
+  x: new Float32Array(RAIN_COUNT),
+  y: new Float32Array(RAIN_COUNT),
+  z: new Float32Array(RAIN_COUNT),
+  vy:new Float32Array(RAIN_COUNT), // fall speed — much faster than petals
+  vx:new Float32Array(RAIN_COUNT), // slight wind drift
+  len:new Float32Array(RAIN_COUNT),// streak length variance
+};
+
+const _rainDummy = new THREE.Object3D();
+function resetRain(i){
+  const a = Math.random()*Math.PI*2, r = Math.random()*RAIN_R;
+  rain.x[i] = RAIN_CX + Math.cos(a)*r;
+  rain.z[i] = RAIN_CZ + Math.sin(a)*r;
+  rain.y[i] = RAIN_TOP - Math.random()*4; // stagger spawn height
+  rain.vy[i]= .42 + Math.random()*.22;    // fast fall
+  rain.vx[i]= .04 + Math.random()*.03;    // gentle constant wind drift
+  rain.len[i]= .7 + Math.random()*.6;
+}
+for(let i=0;i<RAIN_COUNT;i++){
+  resetRain(i);
+  rain.y[i] = RAIN_BOT + Math.random()*(RAIN_TOP-RAIN_BOT); // spread on load
+}
+
+function tickRain(){
+  if(!AMB.rain) return;
+  for(let i=0;i<RAIN_COUNT;i++){
+    rain.y[i] -= rain.vy[i];
+    rain.x[i] += rain.vx[i];
+    if(rain.y[i] < RAIN_BOT) resetRain(i);
+    _rainDummy.position.set(rain.x[i], rain.y[i], rain.z[i]);
+    _rainDummy.rotation.set(0.12, 0, 0); // slight tilt to match wind drift
+    _rainDummy.scale.set(1, rain.len[i], 1);
+    _rainDummy.updateMatrix();
+    rainMesh.setMatrixAt(i, _rainDummy.matrix);
+  }
+  rainMesh.instanceMatrix.needsUpdate = true;
+}
+
+// ── Wind — toggled on/off via Ambience panel ───────────────────────────────────
+// A single wind direction drives everything so it reads as one coherent breeze:
+// bamboo leans/gusts that direction, lanterns swing like pendulums along it,
+// and a wind sock fills out and points downwind. No new draw calls for bamboo
+// or trees — only the wind sock adds a few small static-count meshes.
+const WIND_DIR = new THREE.Vector2(0.85, 0.35).normalize(); // fixed direction (x,z)
+const _windDummy = new THREE.Object3D();
+
+function tickWind(elapsed){
+  if(!AMB.wind) return;
+
+  // Gust strength — slow swell so it feels like a real changing breeze, not noise
+  const gust = 0.55 + Math.sin(elapsed*.35)*.25 + Math.sin(elapsed*.9)*.12;
+
+  // Bamboo — every stalk leans the SAME direction, with a fast small flutter on top
+  bambooGroves.forEach(grove=>{
+    const {culmM, count, baseX, baseZ, baseY, baseH, phase} = grove;
+    for(let i=0;i<count;i++){
+      const flutter = Math.sin(elapsed*5 + phase[i]) * 0.025;
+      const lean = (0.16 * gust) + flutter;
+      _windDummy.position.set(baseX[i], baseY[i] + baseH[i]/2, baseZ[i]);
+      _windDummy.scale.set(1, baseH[i]/7, 1);
+      // Rotate around the axis perpendicular to wind direction so the bend
+      // always points downwind regardless of each stalk's own facing
+      _windDummy.rotation.set(lean*WIND_DIR.y, phase[i]*0.3, -lean*WIND_DIR.x);
+      _windDummy.updateMatrix();
+      culmM.setMatrixAt(i, _windDummy.matrix);
+    }
+    culmM.instanceMatrix.needsUpdate = true;
+  });
+
+  // Lanterns — pendulum swing along the wind axis, gentle and in unison
+  lanternGroups.forEach(({group, phase})=>{
+    const swing = Math.sin(elapsed*1.4 + phase*0.15) * 0.3 * gust + 0.22*gust;
+    group.rotation.x =  swing * WIND_DIR.y;
+    group.rotation.z = -swing * WIND_DIR.x;
+  });
+
+  // Wind sock — chain of pivots: straight down when calm, swings up toward
+  // horizontal (pointing downwind) as gust strength increases. Tip flutters.
+  if(windSock){
+    const fill = Math.min(1, Math.max(0, gust*1.2)); // 0=limp, 1=fully filled/horizontal
+    const windYaw = Math.atan2(WIND_DIR.x, WIND_DIR.y);
+    windSock.group.rotation.y = windYaw;
+    windSock.pivots.forEach((pivot,i)=>{
+      const t=(i+1)/windSock.pivots.length;
+      // Calm: each segment hangs straight down (local -X rotation of 90° puts it vertical).
+      // Filled: rotates toward horizontal (0°), progressively more toward the tail.
+      const targetAngle = THREE.MathUtils.lerp(Math.PI/2, 0.08, fill*Math.min(1,t*1.3));
+      const flutter = Math.sin(elapsed*4.5 + i*1.3) * 0.06 * fill * t;
+      pivot.rotation.x = targetAngle + flutter;
+    });
+  }
+}
+
+function resetWind(){
+  bambooGroves.forEach(grove=>{
+    const {culmM, count, baseX, baseZ, baseY, baseH, phase} = grove;
+    for(let i=0;i<count;i++){
+      _windDummy.position.set(baseX[i], baseY[i] + baseH[i]/2, baseZ[i]);
+      _windDummy.scale.set(1, baseH[i]/7, 1);
+      _windDummy.rotation.set(0, phase[i]*0.3, 0);
+      _windDummy.updateMatrix();
+      culmM.setMatrixAt(i, _windDummy.matrix);
+    }
+    culmM.instanceMatrix.needsUpdate = true;
+  });
+  lanternGroups.forEach(({group})=>{ group.rotation.x=0; group.rotation.z=0; });
+  if(windSock){
+    windSock.pivots.forEach(pivot=>{ pivot.rotation.x = Math.PI/2; }); // hang straight down at rest
+  }
+}
+
+// ── Animate ───────────────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+let frameN=0;
+function animate(){
+  requestAnimationFrame(animate);
+  frameN++;
+  if(IS_MOBILE && frameN%2!==0) return;
+  const elapsed=clock.getElapsedTime();
+  tickPetals(elapsed);
+  tickRain();
+  tickWind(elapsed);
+  if(riverWaterMat) riverWaterMat.emissiveIntensity = .4 + Math.sin(elapsed*1.3)*.08;
+  updatePersistentLabelPositions();
+  scene.fog.density=FOG_BASE*AMB.fogDensity;
+  controls.update();
+  renderer.render(scene,camera);
+}
+animate();
+</script>
+</body>
+</html>

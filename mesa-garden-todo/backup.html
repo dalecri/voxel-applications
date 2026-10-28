@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Voxel Mesa Oasis</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased}
+body{overflow:hidden;background:#000}
+#c{width:100vw;height:100vh;display:block}
+body::after{
+  content:'';position:fixed;inset:0;z-index:950;pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode:overlay;opacity:.05;
+}
+ 
+:root{
+  --g-bg:    rgba(28,22,20,.72);
+  --g-bg2:   rgba(42,34,30,.80);
+  --g-border:rgba(255,255,255,.1);
+  --g-shadow:0 8px 32px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.07);
+  --g-ink:   rgba(18,12,10,.92);
+  --g-ink2:  rgba(18,12,10,.58);
+  --g-ink3:  rgba(18,12,10,.36);
+  --g-accent:#e67e22;
+  --mono:    'SF Mono','Fira Mono','Consolas',monospace;
+  --r:       50px;
+  --bar-w:   min(580px, calc(100vw - 32px));
+  --bar-bot: max(28px, env(safe-area-inset-bottom, 28px));
+}
+ 
+/* == Time badge == */
+/* == Gooey wrapper == */
+#goo-wrap{
+  position:fixed; top:0; left:0; width:100%; height:100%;
+  z-index:902; pointer-events:none;
+}
+#goo-wrap.goo-active{ filter:blur(10px) contrast(28); }
+#time-badge{ pointer-events:auto; }
+#amb-panel:not(.hidden){ pointer-events:auto; }
+#time-badge{
+  position:fixed;top:16px;left:50%;transform:translateX(-50%);
+  background:rgba(28,22,20,.55);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border:1px solid rgba(255,255,255,.12);border-radius:24px;
+  padding:6px 18px;font-size:11px;color:rgba(255,255,255,.92);
+  pointer-events:auto;letter-spacing:.06em;
+  white-space:nowrap;font-family:var(--mono);
+  max-width:calc(100vw - 32px);overflow:hidden;text-overflow:ellipsis;text-align:center;
+  cursor:pointer;transition:background .15s, transform .35s cubic-bezier(.34,1.4,.64,1);
+}
+#time-badge:hover{background:rgba(42,33,30,.7)}
+#time-badge.goo-pulse{transform:translateX(-50%) scale(.96)}
+ 
+/* == Todo panel == */
+#todo-panel{
+  position:fixed;z-index:901;
+  left:50%;transform:translateX(-50%) translateY(0);
+  width:var(--bar-w);
+  transition:opacity .22s cubic-bezier(.16,1,.3,1), transform .22s cubic-bezier(.16,1,.3,1);
+  transform-origin:bottom center;
+  bottom:calc(var(--bar-bot) + 66px);
+  max-height:min(400px,52vh);
+  display:flex;flex-direction:column;gap:12px;
+  background:none;border:none;padding:0;
+}
+#todo-panel.hidden{opacity:0;pointer-events:none;transform:translateX(-50%) translateY(14px)}
+ 
+/* == Ambience panel == */
+#amb-panel{
+  position:fixed;z-index:901;
+  top:60px;left:50%;
+  transform:translateX(-50%) translateY(0) scale(1);
+  width:min(300px,calc(100vw - 32px));
+  transition:opacity .38s cubic-bezier(.32,1.6,.5,1), transform .38s cubic-bezier(.32,1.6,.5,1);
+  transform-origin:top center;
+  background:rgba(28,22,20,.55);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:24px;
+  padding:14px 22px 12px;
+  box-shadow:0 20px 50px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.18), inset 0 0 40px rgba(255,255,255,.03);
+}
+#amb-panel.hidden{
+  opacity:0;pointer-events:none;
+  transform:translateX(-50%) translateY(-46px) scale(.35);
+}
+#amb-panel .ap-head,#amb-panel #ap-rows,#amb-panel .ap-reset{
+  transition:opacity .15s ease .12s;
+}
+#amb-panel.hidden .ap-head,#amb-panel.hidden #ap-rows,#amb-panel.hidden .ap-reset{
+  opacity:0; transition:opacity .08s ease;
+}
+ 
+/* == Panel internals == */
+.ap-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.ap-title{font-family:var(--mono);font-size:9px;letter-spacing:.18em;color:rgba(255,255,255,.4);text-transform:uppercase}
+.ap-row{display:flex;flex-direction:column;gap:6px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.08)}
+.ap-row:last-child{border-bottom:none}
+.ap-lbl{display:flex;align-items:center;justify-content:space-between;font-family:var(--mono);font-size:12px;color:rgba(255,255,255,.8)}
+.ap-val{font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.5);min-width:34px;text-align:right}
+.ap-segs{display:flex;gap:4px;touch-action:none;-webkit-tap-highlight-color:transparent;cursor:pointer}
+.ap-seg{
+  flex:1;height:14px;border-radius:4px;
+  background:rgba(255,255,255,.1);
+  transition:background .12s, transform .12s;
+}
+.ap-seg.filled{background:var(--seg-color,#e67e22)}
+.ap-seg.peak{box-shadow:0 0 8px var(--seg-color,#e67e22)}
+.ap-segs:active .ap-seg{transform:scaleY(1.15)}
+.ap-reset{
+  margin-top:10px;width:100%;padding:7px;border-radius:10px;
+  font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);
+  color:rgba(255,255,255,.5);cursor:pointer;transition:background .12s,color .12s;
+}
+.ap-reset:hover{background:rgba(255,255,255,.16);color:rgba(255,255,255,.9)}
+ 
+/* == Task list == */
+#todo-list{overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:8px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.2) transparent;-webkit-overflow-scrolling:touch;padding-right:2px}
+.td-item{
+  display:flex;align-items:center;gap:14px;padding:14px 20px;
+  border-radius:50px;cursor:pointer;
+  background:rgba(255,247,235,.09);
+  border:1px solid rgba(255,247,235,.13);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12);
+  transition:background .2s,transform .2s;
+  -webkit-tap-highlight-color:transparent;
+}
+.td-item:hover{background:rgba(255,247,235,.15);transform:translateX(2px)}
+.td-item.done{opacity:.45}
+.td-item.done .td-text{text-decoration:line-through}
+.td-check{
+  width:20px;height:20px;border-radius:50%;
+  border:2px solid rgba(18,12,10,.25);
+  flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  transition:all .22s;color:#fff;font-size:11px;
+}
+.td-item.done .td-check{background:var(--g-accent);border-color:var(--g-accent);color:#fff}
+.td-text{font-family:var(--mono);font-size:12px;color:var(--g-ink);flex:1;word-break:break-word;line-height:1.4;text-shadow:0 1px 3px rgba(255,255,255,.5)}
+.td-body{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
+.td-date{font-family:var(--mono);font-size:10px;color:rgba(18,12,10,.62);letter-spacing:.02em;text-shadow:0 1px 2px rgba(255,255,255,.4)}
+.td-del{background:none;border:none;color:rgba(18,12,10,.3);font-size:15px;cursor:pointer;padding:3px 5px;flex-shrink:0;transition:color .12s;-webkit-tap-highlight-color:transparent}
+.td-del:hover,.td-del:active{color:rgba(255,100,100,.9)}
+#td-empty{
+  font-family:var(--mono);font-size:12px;color:rgba(255,255,255,.5);
+  text-align:center;padding:22px 16px;letter-spacing:.02em;line-height:1.5;
+  background:rgba(255,255,255,.05);border:1px dashed rgba(255,255,255,.15);border-radius:24px;
+}
+ 
+/* == Unified task bar == */
+#task-bar{
+  position:fixed;
+  bottom:var(--bar-bot);
+  left:50%;transform:translateX(-50%);
+  width:var(--bar-w);
+  background:rgba(28,22,20,.72);
+  backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);
+  border:1px solid var(--g-border);
+  border-radius:28px;
+  box-shadow:var(--g-shadow), inset 0 0 30px rgba(255,255,255,.025);
+  display:flex;align-items:center;
+  height:56px;padding:0 6px;
+  z-index:900;
+}
+#todo-fab,#eye-fab{
+  flex-shrink:0;width:46px;height:44px;
+  background:none;border:none;
+  color:rgba(255,255,255,.70);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:var(--r);
+  transition:color .12s,background .12s;
+  -webkit-tap-highlight-color:transparent;
+}
+#todo-fab:hover,#eye-fab:hover{color:rgba(255,255,255,.95);background:rgba(255,255,255,.08)}
+#todo-fab:active,#eye-fab:active{background:rgba(0,0,0,.1)}
+#eye-fab.active{color:#e67e22}
+#eye-fab.active:hover{color:#f39c12}
+.bar-divider{width:1px;height:22px;background:rgba(0,0,0,.15);flex-shrink:0}
+#task-input{
+  flex:1;background:none;border:none;outline:none;
+  font-family:var(--mono);font-size:14px;
+  color:rgba(255,255,255,.92);caret-color:var(--g-accent);
+  padding:0 14px;-webkit-appearance:none;min-width:0;
+}
+#task-input::placeholder{color:rgba(255,255,255,.3);font-style:italic}
+#task-submit{
+  display:none;flex-shrink:0;width:34px;height:34px;
+  border-radius:12px;background:rgba(0,0,0,.07);
+  border:1px solid rgba(0,0,0,.1);color:rgba(18,12,10,.55);cursor:pointer;
+  align-items:center;justify-content:center;
+  transition:background .12s;margin-right:4px;
+  -webkit-tap-highlight-color:transparent;
+}
+#task-submit:active{background:rgba(0,0,0,.14)}
+ 
+#task-input:focus-visible{outline:none}
+#todo-fab:focus-visible,#eye-fab:focus-visible,#task-submit:focus-visible,
+.td-item:focus-visible,.td-del:focus-visible,.ap-reset:focus-visible,#time-badge:focus-visible{
+  outline:2px solid rgba(230,126,34,.8);outline-offset:2px;
+}
+ 
+@keyframes barPulse{
+  0%{box-shadow:var(--g-shadow), inset 0 0 30px rgba(255,255,255,.025), 0 0 0 0 rgba(230,126,34,.55)}
+  100%{box-shadow:var(--g-shadow), inset 0 0 30px rgba(255,255,255,.025), 0 0 0 16px rgba(230,126,34,0)}
+}
+#task-bar.success{animation:barPulse .55s ease-out}
+ 
+/* == Mobile == */
+@media (max-width:640px){
+  :root{--bar-bot:max(20px,env(safe-area-inset-bottom,20px))}
+  #task-bar{height:52px;border-radius:26px;padding:0 4px;width:calc(100vw - 24px);--bar-w:calc(100vw - 24px)}
+  #task-input{font-size:16px;padding:0 10px}
+  #task-submit{display:flex}
+  #todo-fab,#eye-fab{width:42px;height:40px}
+  #amb-panel{width:calc(100vw - 24px);padding:18px 18px 16px}
+  #todo-panel{width:calc(100vw - 24px);max-height:min(320px,52vh)}
+  .td-item{padding:12px 14px}
+  .td-check{width:22px;height:22px}
+  .td-text{font-size:13px}
+  #time-badge{font-size:10px;padding:5px 12px;max-width:calc(100vw - 32px)}
+}
+ 
+/* == Tooltip == */
+#lamp-tooltip{
+  position:fixed;pointer-events:none;z-index:999;
+  background:rgba(0,0,0,.55);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border:1px solid rgba(255,255,255,.15);border-radius:var(--r);
+  padding:8px 13px;font-family:var(--mono);font-size:12px;color:rgba(255,255,255,.88);
+  max-width:min(240px,72vw);line-height:1.5;
+  box-shadow:0 4px 20px rgba(0,0,0,.3);transition:opacity .1s;
+}
+#lamp-tooltip.hidden{opacity:0}
+ 
+/* == Persistent tree labels == */
+.tree-label{
+  position:fixed;z-index:998;pointer-events:none;
+  transform:translate(-50%,-100%);
+  background:rgba(0,0,0,.55);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border:1px solid rgba(255,255,255,.15);border-radius:8px;
+  padding:5px 10px;font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.88);
+  white-space:nowrap;max-width:160px;overflow:hidden;text-overflow:ellipsis;
+  box-shadow:0 4px 14px rgba(0,0,0,.3);
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="lamp-tooltip" class="hidden"></div>
+<div id="goo-wrap">
+  <div id="time-badge" title="Ambience settings">☀️ Day</div>
+  <div id="amb-panel" class="hidden">
+    <div class="ap-head">
+      <span class="ap-title">Environment</span>
+    </div>
+    <div id="ap-rows"></div>
+    <button class="ap-reset" id="ap-reset">Reset</button>
+  </div>
+</div>
+ 
+<div id="todo-panel" class="hidden"><div id="todo-list"></div></div>
+ 
+<div id="task-bar">
+  <input id="task-input" type="text" placeholder="plant a new cactus..." maxlength="120" autocomplete="off" spellcheck="false">
+  <button id="task-submit" title="Add task">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 12h14M12 5l7 7-7 7"/>
+    </svg>
+  </button>
+  <div class="bar-divider"></div>
+  <button id="eye-fab" title="Show all task labels">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/>
+      <line id="eye-slash" x1="3" y1="3" x2="21" y2="21" style="display:none"/>
+    </svg>
+  </button>
+  <div class="bar-divider"></div>
+  <button id="todo-fab" title="Tasks">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2 12l5 5L22 4"/><path d="M2 19l5 5L22 11" opacity=".45"/>
+    </svg>
+  </button>
+</div>
+ 
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/controls/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+ 
+// == Detect mobile ==
+const IS_MOBILE = window.innerWidth <= 768 || ('ontouchstart' in window);
+ 
+// == Renderer ==
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({
+  canvas, antialias: !IS_MOBILE, powerPreference:'high-performance'
+});
+renderer.setPixelRatio(IS_MOBILE ? 1 : Math.min(devicePixelRatio, 1.5));
+renderer.setSize(innerWidth, innerHeight);
+// ENABLING SHADOWS FOR MINECRAFT LOOK
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.LinearToneMapping;
+renderer.toneMappingExposure = 1.0;
+ 
+window.addEventListener('resize',()=>{
+  renderer.setSize(innerWidth,innerHeight);
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+});
+ 
+// == Scene ==
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#78A7FF'); // Minecraft Day Sky
+scene.fog = new THREE.Fog('#78A7FF', 80, 350); // Linear blocky fog
+ 
+// == Camera ==
+const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.5, 400);
+camera.position.set(0, 55, 90);
+ 
+// == Controls ==
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(0, 15, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 30;
+controls.maxDistance = 140;
+controls.zoomSpeed = 0.17;
+controls.maxPolarAngle = Math.PI * 0.42;
+controls.update();
+ 
+// == Lighting ==
+const hemi = new THREE.HemisphereLight(0xffffff, 0x5a3a20, 0.6);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff5e6, 1.4);
+sun.position.set(60, 100, -40);
+sun.castShadow = true;
+sun.shadow.camera.left = -75;
+sun.shadow.camera.right = 75;
+sun.shadow.camera.top = 75;
+sun.shadow.camera.bottom = -75;
+sun.shadow.camera.near = 0.5;
+sun.shadow.camera.far = 250;
+sun.shadow.bias = -0.001;
+sun.shadow.mapSize.width = 2048;
+sun.shadow.mapSize.height = 2048;
+scene.add(sun);
+ 
+// Night fill
+const nightFill = new THREE.PointLight(0xff9944, 0, 200);
+nightFill.position.set(0, 18, 0);
+scene.add(nightFill);
+ 
+// == Ambience settings ==
+const AMB = { brightness: 1.0, fogDensity: 1.0 };
+const FOG_BASE = 350; // Using linear fog now
+const WATER_LEVEL = 4; // Raised water level to fill the reservoir more
+ 
+// == Shared Materials (Minecraft colors based on image) ==
+const BANDS = {
+  0: '#d9652a', // Orange terracotta / Sand
+  1: '#d9652a',
+  2: '#d9652a',
+  3: '#8e3d2c', // Red terracotta
+  4: '#d9652a',
+  5: '#d2a28d', // White terracotta
+  6: '#856b62', // Light Gray
+  7: '#d9652a',
+  8: '#8e3d2c',
+  9: '#4b3123', // Brown terracotta
+  10: '#d9652a',
+  11: '#b57b28', // Yellow terracotta
+  12: '#d9652a',
+  13: '#8e3d2c',
+  14: '#d9652a',
+  15: '#d2a28d',
+  16: '#856b62',
+};
+ 
+const matsCache = {};
+function getVoxelMat(hex) {
+  if(!matsCache[hex]) {
+    matsCache[hex] = new THREE.MeshStandardMaterial({
+      color: hex, roughness: 1.0, metalness: 0.0
+    });
+  }
+  return matsCache[hex];
+}
+ 
+const waterMat = new THREE.MeshStandardMaterial({
+  color: '#3256a8', transparent: true, opacity: 0.85, roughness: 0.1
+});
+ 
+// Emissive materials for torches/lamps
+const EMIT = {
+  torchFlame: new THREE.MeshStandardMaterial({color:'#ffaa00',emissive:'#ff5500',emissiveIntensity:3.5}),
+  fireCore:   new THREE.MeshStandardMaterial({color:'#ffcc00',emissive:'#ff8800',emissiveIntensity:6})
+};
+ 
+// == Terrain Logic (Mesa Voxel Generation) ==
+const terrain = new Map();
+const getH = (x,z) => terrain.get(`${Math.round(x)},${Math.round(z)}`) ?? 0;
+ 
+function getMesaHeight(x, z) {
+  // Base rolling hills
+  let base = 8 + Math.sin(x*0.06)*5 + Math.cos(z*0.07)*5;
+  // Large plateau features
+  let n = Math.sin(x*0.02) * Math.cos(z*0.02) * 20;
+  let h = base + Math.abs(n);
+  
+  const d = Math.sqrt(x*x + z*z);
+  
+  // NEW: Oasis Pond Logic
+  const POND_RADIUS = 14;
+  if (d < POND_RADIUS) {
+    if (d < POND_RADIUS - 6) {
+      h = 1; // Deep center
+    } else {
+      // Stepped shore towards the edges of the pond
+      h = 1 + Math.floor((d - (POND_RADIUS - 6)) / 2) * 2;
+    }
+  }
+  
+  // Add some random noise bumps on top
+  if (Math.sin(x*0.3 + z*0.2) > 0.7) h += 1;
+  
+  // Circular Basin Effect (Mountains wrapping around)
+  const BOWL_START = 22; // Pushed outward slightly to accommodate the pond
+  if (d > BOWL_START) {
+    // Increase height radially, stepped by 3 for mesa terracing look
+    let radialBoost = Math.pow((d - BOWL_START) * 0.18, 1.5) * 2.5;
+    h += Math.floor(radialBoost / 3) * 3;
+  }
+  
+  return Math.floor(h);
+}
+ 
+function buildTerrain(){
+  const SIZE = IS_MOBILE ? 40 : 50;
+  const blocks = {}; // Organize by color hex
+  const waterBlocks = [];
+ 
+  // Calculate Heights
+  for(let x=-SIZE; x<=SIZE; x++) {
+    for(let z=-SIZE; z<=SIZE; z++) {
+      const d = Math.sqrt(x*x+z*z); 
+      if(d>SIZE) continue;
+      terrain.set(`${x},${z}`, getMesaHeight(x, z));
+    }
+  }
+ 
+  // Determine Visible Blocks
+  for(let x=-SIZE; x<=SIZE; x++) {
+    for(let z=-SIZE; z<=SIZE; z++) {
+      const d = Math.sqrt(x*x+z*z); 
+      if(d>SIZE) continue;
+      
+      let h = getH(x, z);
+ 
+      // Add water layer
+      if (h <= WATER_LEVEL) {
+        for(let wy=h; wy<=WATER_LEVEL; wy++){
+          waterBlocks.push({x, y:wy, z});
+        }
+      }
+ 
+      // Check neighbors to know how far down to draw the cliff sides (saving instances)
+      let minH = Math.min(
+        getH(x-1, z) || h, getH(x+1, z) || h,
+        getH(x, z-1) || h, getH(x, z+1) || h
+      );
+      
+      // Draw surface and visible cliff faces
+      let drawMin = Math.max(1, minH);
+      for (let y = drawMin; y <= h; y++) {
+        // Find correct band color based on Y level
+        let bandKey = y % 17;
+        if(bandKey < 0) bandKey += 17;
+        let hex = BANDS[bandKey];
+ 
+        // --- OASIS LUSH LOGIC ---
+        const distToCenter = Math.sqrt(x*x + z*z);
+        // Only apply greenery to top blocks near the water level around the pond
+        if (y === h && h > WATER_LEVEL && h <= WATER_LEVEL + 5 && distToCenter < 18) {
+          // Fade out the lushness the further we get from the water
+          let lushChance = 1.0 - ((distToCenter - 8) / 10);
+          
+          if (Math.random() < lushChance) {
+            hex = Math.random() > 0.3 ? '#668f45' : '#517a36'; // Voxel grass colors
+            
+            // Occasionally stack a dark green block on top to act as a voxel bush
+            if (Math.random() < 0.08) {
+              let bushHex = '#3a5a22';
+              if (!blocks[bushHex]) blocks[bushHex] = [];
+              blocks[bushHex].push({x, y: h + 1, z});
+            }
+          }
+        }
+        // ------------------------
+ 
+        if (!blocks[hex]) blocks[hex] = [];
+        blocks[hex].push({x, y, z});
+      }
+    }
+  }
+ 
+  // Build Instanced Meshes
+  const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+  const dummy = new THREE.Object3D();
+ 
+  for (const hex in blocks) {
+    const pts = blocks[hex];
+    const mesh = new THREE.InstancedMesh(boxGeo, getVoxelMat(hex), pts.length);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    pts.forEach((p, i) => {
+      dummy.position.set(p.x, p.y, p.z);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    scene.add(mesh);
+  }
+ 
+  // Water mesh
+  if (waterBlocks.length) {
+    const wMesh = new THREE.InstancedMesh(boxGeo, waterMat, waterBlocks.length);
+    wMesh.receiveShadow = true;
+    waterBlocks.forEach((p, i) => {
+      dummy.position.set(p.x, p.y - 0.15, p.z); // Slightly lower than block edge
+      dummy.updateMatrix();
+      wMesh.setMatrixAt(i, dummy.matrix);
+    });
+    wMesh.instanceMatrix.needsUpdate = true;
+    scene.add(wMesh);
+  }
+}
+ 
+// == Task Trees (Voxel Cacti) ==
+const TREE_POOL = [
+  [18,12], [-14,-18], [22,-8], [-20,10], 
+  [10,-24], [26,18], [-24,-16], [8,22], 
+  [-16,24], [20,-20], [-28,8], [14,16], 
+  [-12,-22], [24,-16], [-18,18], [12,26]
+];
+ 
+const taskTrees = [];
+const taskFlowers = [];
+const treeSpawnTimes = {};
+ 
+function spawnTaskCactus(x, z, todo){
+  const y = getH(x, z);
+  const g = new THREE.Group();
+ 
+  const cactusMat = getVoxelMat('#557a2b');
+  const flowerMat = new THREE.MeshStandardMaterial({color:'#ff9900', emissive:'#cc5500', emissiveIntensity:0.2, roughness:0.8});
+ 
+  // Voxel Trunk
+  for(let i=1; i<=3; i++){
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1, 0.8), cactusMat);
+    b.position.set(0, i - 0.5, 0); // rest on top of block
+    b.castShadow = true; b.receiveShadow = true;
+    g.add(b);
+  }
+ 
+  // Random arm
+  if(Math.random() > 0.5) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1, 0.8), cactusMat);
+    arm.position.set(0.8, 1.5, 0);
+    arm.castShadow = true; arm.receiveShadow = true;
+    g.add(arm);
+    // Flower on arm
+    const f = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), flowerMat);
+    f.position.set(0.8, 2.2, 0);
+    g.add(f);
+  } else {
+    // Flower on top
+    const f = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), flowerMat);
+    f.position.set(0, 2.7, 0);
+    g.add(f);
+  }
+ 
+  // Invisible hit sphere
+  const hitMesh = new THREE.Mesh(new THREE.BoxGeometry(2.5, 4, 2.5), new THREE.MeshBasicMaterial({visible:false}));
+  hitMesh.position.y = 1.5; g.add(hitMesh);
+ 
+  g.position.set(x, y + 0.5, z); // shift up to sit exactly on block
+  const isNew = !(todo.id in treeSpawnTimes);
+  if(isNew) treeSpawnTimes[todo.id] = performance.now();
+  g.scale.setScalar(isNew ? 0.001 : 1);
+  scene.add(g);
+ 
+  const entry = { group:g, canopyMats: [flowerMat], hitMesh, todo, spawnedAt: treeSpawnTimes[todo.id] };
+  hitMesh.userData.treeEntry = entry;
+  taskTrees.push(entry);
+  return entry;
+}
+ 
+function spawnTaskBarrelCactus(x, z, todo){
+  const y = getH(x, z);
+  const g = new THREE.Group();
+ 
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), getVoxelMat('#557a2b'));
+  body.position.y = 0.4;
+  body.castShadow = true; body.receiveShadow = true;
+  g.add(body);
+ 
+  const flowerMat = new THREE.MeshStandardMaterial({color:'#ff5555', emissive:'#cc2222', emissiveIntensity:0.35, roughness:0.8});
+  const flower = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), flowerMat);
+  flower.position.y = 0.95; g.add(flower);
+ 
+  g.position.set(x, y + 0.5, z);
+  scene.add(g);
+  taskFlowers.push({group:g});
+}
+ 
+function buildTaskTrees(){
+  taskTrees.forEach(t=>scene.remove(t.group));
+  taskTrees.length = 0;
+  taskFlowers.forEach(f=>scene.remove(f.group));
+  taskFlowers.length = 0;
+ 
+  const validPool = TREE_POOL.filter(([x,z])=> getH(x,z) > WATER_LEVEL); // Must be above water
+ 
+  todos.forEach((t, i)=>{
+    if(i >= validPool.length) return;
+    const seed = (t.id || i+1);
+    const nx = validPool[i][0] + Math.round(((seed*7919)%100)/100 - 0.5); // Integer pos
+    const nz = validPool[i][1] + Math.round(((seed*6271)%100)/100 - 0.5);
+    if(getH(nx,nz) <= WATER_LEVEL) return;
+    if(t.done){
+      spawnTaskBarrelCactus(nx, nz, t);
+    } else {
+      spawnTaskCactus(nx, nz, t);
+    }
+  });
+  buildPersistentLabels();
+}
+ 
+// == Hover / tooltip ==
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let hoveredTree = null;
+const tooltip = document.getElementById('lamp-tooltip');
+ 
+// == Eye toggle ==
+let labelsAlwaysOn = false;
+const persistentLabels = [];
+ 
+function buildPersistentLabels(){
+  persistentLabels.forEach(p=>p.el.remove());
+  persistentLabels.length = 0;
+  if(!labelsAlwaysOn) return;
+ 
+  taskTrees.forEach(entry=>{
+    const el = document.createElement('div');
+    el.className = 'tree-label';
+    el.textContent = '🌵 ' + entry.todo.text;
+    document.body.appendChild(el);
+    persistentLabels.push({el, entry});
+  });
+}
+ 
+function updatePersistentLabelPositions(){
+  if(!labelsAlwaysOn || persistentLabels.length===0) return;
+  const v = new THREE.Vector3();
+  persistentLabels.forEach(({el, entry})=>{
+    v.set(entry.group.position.x, entry.group.position.y + 3.5, entry.group.position.z);
+    v.project(camera);
+    const behindCamera = v.z > 1;
+    const x = (v.x*0.5+0.5)*innerWidth;
+    const y = (-v.y*0.5+0.5)*innerHeight;
+    if(behindCamera || x<-100 || x>innerWidth+100 || y<-100 || y>innerHeight+100){
+      el.style.display='none';
+    } else {
+      el.style.display='block';
+      el.style.left = x+'px';
+      el.style.top  = y+'px';
+    }
+  });
+}
+ 
+const eyeFab = document.getElementById('eye-fab');
+const eyeSlash = document.getElementById('eye-slash');
+eyeFab.addEventListener('click', e=>{
+  e.stopPropagation();
+  labelsAlwaysOn = !labelsAlwaysOn;
+  eyeFab.classList.toggle('active', labelsAlwaysOn);
+  eyeSlash.style.display = labelsAlwaysOn ? 'inline' : 'none';
+  eyeFab.title = labelsAlwaysOn ? 'Hide all task labels' : 'Show all task labels';
+  buildPersistentLabels();
+  updatePersistentLabelPositions();
+});
+ 
+function onPointerMove(e){
+  if(labelsAlwaysOn){ tooltip.classList.add('hidden'); return; }
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  mouse.x = (clientX / innerWidth)  * 2 - 1;
+  mouse.y = (clientY / innerHeight) * -2 + 1;
+ 
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects(taskTrees.map(t=>t.hitMesh));
+ 
+  if(intersects.length > 0){
+    const entry = intersects[0].object.userData.treeEntry;
+    if(entry !== hoveredTree){
+      if(hoveredTree) setTreeHover(hoveredTree, false);
+      hoveredTree = entry;
+      setTreeHover(entry, true);
+    }
+    tooltip.style.left = (clientX + 14) + 'px';
+    tooltip.style.top  = (clientY - 12) + 'px';
+    tooltip.textContent = '🌵 ' + entry.todo.text;
+    tooltip.classList.remove('hidden');
+    canvas.style.cursor = 'pointer';
+  } else {
+    if(hoveredTree){ setTreeHover(hoveredTree, false); hoveredTree = null; }
+    tooltip.classList.add('hidden');
+    canvas.style.cursor = '';
+  }
+}
+ 
+function setTreeHover(entry, on){
+  entry.canopyMats.forEach(m=>{
+    m.emissiveIntensity = on ? 0.8 : 0.2;
+    m.emissive.set(on ? '#ffcc00' : '#cc5500');
+  });
+}
+ 
+window.addEventListener('mousemove', onPointerMove, {passive:true});
+window.addEventListener('touchmove',  onPointerMove, {passive:true});
+ 
+// == Voxel Torch ==
+function createRusticTorch(x,z){
+  const y = getH(x,z);
+  if(y <= WATER_LEVEL) return; // don't put in water
+  const g=new THREE.Group();
+  
+  const pole = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.6, 0.1), getVoxelMat('#5a3820'));
+  pole.position.y=0.3; g.add(pole);
+  
+  const flame = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.15), EMIT.torchFlame);
+  flame.position.y=0.65; g.add(flame);
+ 
+  const pLight = new THREE.PointLight('#ffaa00', 1, 15);
+  pLight.position.y = 0.8; g.add(pLight);
+ 
+  g.position.set(x, y + 0.5, z);
+  scene.add(g);
+}
+ 
+// == String Lights (Voxel lanterns on fence posts) ==
+const lanternGroups = [];
+function createStringLights(ax,az,bx,bz,count=5){
+  const postMat = getVoxelMat('#5a3820');
+  const ironMat = getVoxelMat('#222222');
+  const h=4;
+  const ay=getH(ax,az)+h, by=getH(bx,bz)+h;
+ 
+  [ {x:ax,z:az}, {x:bx,z:bz} ].forEach(pos=>{
+    const gy=getH(pos.x,pos.z);
+    const postH = Math.max(1, (ay - gy));
+    const post=new THREE.Mesh(new THREE.BoxGeometry(0.25, postH, 0.25), postMat);
+    post.position.set(pos.x, gy + postH/2 + 0.5, pos.z); 
+    post.castShadow = true;
+    scene.add(post);
+  });
+ 
+  for(let i=1;i<count;i++){
+    const t = i/count;
+    const lx=ax+(bx-ax)*t, lz=az+(bz-az)*t;
+    const sag = Math.sin(t*Math.PI)*1.5;
+    const ly = ay+(by-ay)*t - sag;
+    
+    const lg=new THREE.Group();
+    const lanternBox = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.4), ironMat);
+    const glowBox = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.3), new THREE.MeshStandardMaterial({color:'#ffea88', emissive:'#ffcc22', emissiveIntensity:2}));
+    glowBox.position.y = 0;
+    lg.add(lanternBox, glowBox);
+    
+    const pLight = new THREE.PointLight('#ffdd66', 1, 20);
+    lg.add(pLight);
+ 
+    lg.position.set(lx, ly, lz);
+    scene.add(lg);
+    lanternGroups.push({group:lg, pivotY:ly, phase:Math.random()*Math.PI*2});
+  }
+}
+ 
+// == Dry Brush / Dead Bushes (Minecraft style) ==
+function createDeadBush(x, z) {
+  const y = getH(x,z);
+  if(y <= WATER_LEVEL) return; // Not in water
+  
+  const g = new THREE.Group();
+  const bushMat = getVoxelMat('#6b4c3a'); // Dark brown
+  
+  // Tiny cluster of cubes
+  const b1 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.5, 0.2), bushMat);
+  b1.position.set(0, 0.25, 0); g.add(b1);
+  const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 0.2), bushMat);
+  b2.position.set(0, 0.25, 0); g.add(b2);
+  const b3 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.4), bushMat);
+  b3.position.set(0, 0.3, 0); g.add(b3);
+ 
+  g.position.set(x, y + 0.5, z);
+  scene.add(g);
+}
+ 
+// == Voxel Firepit ==
+function createFirepit(x,z){
+  const y = getH(x,z);
+  if(y <= WATER_LEVEL) return;
+  const g=new THREE.Group();
+  
+  // Ring of stone slabs
+  const ring = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.25, 1.5), getVoxelMat('#666666'));
+  ring.position.y = 0.125; g.add(ring);
+  
+  // Fire block
+  const fire = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.6), EMIT.fireCore);
+  fire.position.y = 0.5; g.add(fire);
+  
+  const pLight = new THREE.PointLight('#ff8800', 2, 25);
+  pLight.position.y = 1.0; g.add(pLight);
+ 
+  g.position.set(x, y + 0.5, z);
+  scene.add(g);
+}
+ 
+// == Voxel Adobe Ruin ==
+function createAdobeRuin(x,z){
+  const y = getH(x,z);
+  const g=new THREE.Group();
+  const mat = getVoxelMat('#d9652a'); // Use the orange sand material
+  
+  // Hollow U-shape
+  const left = new THREE.Mesh(new THREE.BoxGeometry(1, 3, 5), mat);
+  left.position.set(-2, 1.5, 0); left.castShadow=true; left.receiveShadow=true; g.add(left);
+  const right = new THREE.Mesh(new THREE.BoxGeometry(1, 3, 5), mat);
+  right.position.set(2, 1.5, 0); right.castShadow=true; right.receiveShadow=true; g.add(right);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 1), mat);
+  back.position.set(0, 1.5, -2); back.castShadow=true; back.receiveShadow=true; g.add(back);
+ 
+  g.position.set(x, y + 0.5, z);
+  scene.add(g);
+}
+ 
+// == Rocks ==
+function createRocks(){
+  const rockMat=getVoxelMat('#777777');
+  const boxGeo=new THREE.BoxGeometry(1,1,1);
+  const COUNT=IS_MOBILE?15:30;
+  const dummy=new THREE.Object3D();
+  const mesh=new THREE.InstancedMesh(boxGeo,rockMat,COUNT);
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  let placed=0;
+  for(let attempt=0;attempt<400&&placed<COUNT;attempt++){
+    const x=Math.round((Math.random()-0.5)*60);
+    const z=Math.round((Math.random()-0.5)*60);
+    const y=getH(x,z);
+    if(y<=WATER_LEVEL) continue; // no rocks in water
+    
+    // Scale randomly but in blocky steps
+    const sx = Math.random()>0.5?2:1;
+    const sy = 1;
+    const sz = Math.random()>0.5?2:1;
+ 
+    dummy.position.set(x, y + 0.5, z); 
+    dummy.scale.set(sx, sy, sz);
+    dummy.rotation.set(0,0,0);
+    dummy.updateMatrix(); mesh.setMatrixAt(placed++,dummy.matrix);
+  }
+  mesh.count=placed; mesh.instanceMatrix.needsUpdate=true;
+  scene.add(mesh);
+}
+ 
+// == Time of day ==
+function applyTime(){
+  const now=new Date(), hour=now.getHours()+now.getMinutes()/60;
+  let day; if(hour<5)day=0; else if(hour<7)day=(hour-5)/2; else if(hour<18)day=1; else if(hour<20)day=1-(hour-18)/2; else day=0;
+  const night=1-day;
+  
+  // Minecraft Sky Transitions
+  const sky=new THREE.Color().lerpColors(new THREE.Color('#0B0D17'),new THREE.Color('#78A7FF'),day);
+  scene.background=sky; scene.fog.color.copy(sky);
+  
+  // Adjust light intensity
+  hemi.intensity = night * 0.2 + day * 0.7;
+  const nightHemiCol = new THREE.Color('#333344');
+  const dayHemiCol   = new THREE.Color('#ffffff');
+  hemi.color.lerpColors(nightHemiCol, dayHemiCol, day);
+  hemi.groundColor.lerpColors(new THREE.Color('#111111'), new THREE.Color('#666666'), day);
+  
+  sun.intensity = day * 1.5;
+  sun.color.lerpColors(new THREE.Color('#555577'),new THREE.Color('#fff5e6'),day);
+  
+  nightFill.intensity = night * 3.5;
+  
+  renderer.toneMappingExposure=(1.0 + day*0.2) * AMB.brightness;
+  
+  const panelAlpha = (0.55 + day * 0.18).toFixed(2);
+  const barAlpha   = (0.72 + day * 0.15).toFixed(2);
+  const panelBg = `rgba(28,22,20,${panelAlpha})`;
+  const barBg   = `rgba(20,16,14,${barAlpha})`;
+  
+  const ambPanel = document.getElementById('amb-panel');
+  const todPanel = document.getElementById('todo-panel');
+  if(ambPanel) ambPanel.style.background = panelBg;
+  if(todPanel) todPanel.style.background = 'none';
+  const taskBar = document.getElementById('task-bar');
+  if(taskBar) taskBar.style.background = barBg;
+  const badgeEl = document.getElementById('time-badge');
+  if(badgeEl) badgeEl.style.background = panelBg;
+  
+  const itemAlpha = (0.62 + day * 0.22).toFixed(2);
+  const tdStyle = document.getElementById('td-item-style') || (()=>{
+    const el=document.createElement('style');el.id='td-item-style';document.head.appendChild(el);return el;
+  })();
+  tdStyle.textContent=`.td-item{background:rgba(255,247,235,${itemAlpha}) !important}`;
+  
+  const badge=document.getElementById('time-badge');
+  if(badge){
+    const ts=now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const tzShort=now.toLocaleTimeString([],{timeZoneName:'short'}).split(' ').pop();
+    const dateStr=now.toLocaleDateString([],{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+    badge.textContent=dateStr+' · '+ts+' · '+tzShort;
+  }
+}
+ 
+// == Build world ==
+buildTerrain();
+createRocks();
+ 
+// Scattered Dead Bushes
+for(let i=0; i<15; i++) {
+  createDeadBush(Math.round((Math.random()-0.5)*40), Math.round((Math.random()-0.5)*40));
+}
+ 
+createAdobeRuin(-22,18);
+createFirepit(15, 12);
+ 
+createStringLights(-15,-15,-5,-18,IS_MOBILE?3:5);
+ 
+[[12,-12],[-12,12],[-14,-10],[16,10]].forEach(([x,z])=>createRusticTorch(x,z));
+(IS_MOBILE?[[-21,16],[-26,-6],[6,-26],[0,27]]:[[-21,16],[-16,21],[-26,-6],[-25,-9],[6,-26],[9,-25],[0,27],[6,26],[0,-27]]).forEach(([x,z])=>createRusticTorch(x,z));
+ 
+// == Ambience panel ==
+const SEGS_COUNT = 8;
+const SLIDERS=[
+  {key:'brightness', label:'Brightness', min:0.2, max:2,  fmt:v=>Math.round(v*100)+'%', color:'#e67e22'},
+  {key:'fogDensity',  label:'Fog',       min:0.2, max:3,  fmt:v=>v.toFixed(1)+'×',      color:'#78A7FF'},
+];
+const defaults={...AMB};
+const apRows=document.getElementById('ap-rows');
+ 
+function valToSegCount(val,min,max){
+  return Math.max(1, Math.min(SEGS_COUNT, Math.round(((val-min)/(max-min))*SEGS_COUNT)));
+}
+function segCountToVal(n,min,max){
+  return min + (n/SEGS_COUNT)*(max-min);
+}
+ 
+SLIDERS.forEach(({key,label,min,max,fmt,color})=>{
+  const row=document.createElement('div'); row.className='ap-row';
+  const filled = valToSegCount(AMB[key],min,max);
+ 
+  let segsHTML='';
+  for(let i=0;i<SEGS_COUNT;i++){
+    segsHTML+=`<div class="ap-seg${i<filled?' filled':''}${i===filled-1?' peak':''}" data-i="${i}"></div>`;
+  }
+ 
+  row.innerHTML=`
+    <div class="ap-lbl">
+      <span>${label}</span>
+      <span class="ap-val" id="v-${key}">${fmt(AMB[key])}</span>
+    </div>
+    <div class="ap-segs" id="segs-${key}" style="--seg-color:${color}">${segsHTML}</div>`;
+  apRows.appendChild(row);
+ 
+  const segsEl = row.querySelector('.ap-segs');
+ 
+  function setFromClientX(clientX){
+    const rect = segsEl.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const n = Math.max(1, Math.min(SEGS_COUNT, Math.ceil(ratio * SEGS_COUNT)));
+    AMB[key] = segCountToVal(n, min, max);
+    document.getElementById('v-'+key).textContent = fmt(AMB[key]);
+    [...segsEl.children].forEach((seg,i)=>{
+      seg.classList.toggle('filled', i < n);
+      seg.classList.toggle('peak', i === n-1);
+    });
+    applyTime();
+  }
+ 
+  let dragging=false;
+  segsEl.addEventListener('pointerdown', e=>{ dragging=true; segsEl.setPointerCapture(e.pointerId); setFromClientX(e.clientX); });
+  segsEl.addEventListener('pointermove', e=>{ if(dragging) setFromClientX(e.clientX); });
+  segsEl.addEventListener('pointerup',   ()=>{ dragging=false; });
+  segsEl.addEventListener('pointercancel',()=>{ dragging=false; });
+});
+ 
+document.getElementById('ap-reset').addEventListener('click', ()=>{
+  Object.assign(AMB,defaults);
+  SLIDERS.forEach(({key,min,max,fmt})=>{
+    const n = valToSegCount(AMB[key],min,max);
+    document.getElementById('v-'+key).textContent=fmt(AMB[key]);
+    const segsEl=document.getElementById('segs-'+key);
+    [...segsEl.children].forEach((seg,i)=>{
+      seg.classList.toggle('filled', i < n);
+      seg.classList.toggle('peak', i === n-1);
+    });
+  });
+  applyTime();
+});
+ 
+const fab=document.getElementById('time-badge'), panel=document.getElementById('amb-panel');
+const gooWrap=document.getElementById('goo-wrap');
+fab.style.cursor='pointer'; fab.style.pointerEvents='auto';
+fab.addEventListener('click', e=>{
+  e.stopPropagation();
+  const opening = panel.classList.contains('hidden');
+  document.getElementById('todo-panel').classList.add('hidden');
+ 
+  fab.classList.add('goo-pulse');
+  setTimeout(()=>fab.classList.remove('goo-pulse'), 140);
+ 
+  gooWrap.classList.add('goo-active');
+  if(opening){ panel.classList.remove('hidden'); }
+  else{ panel.classList.add('hidden'); }
+  clearTimeout(gooWrap._gooTimer);
+  gooWrap._gooTimer=setTimeout(()=>gooWrap.classList.remove('goo-active'), 420);
+});
+ 
+applyTime();
+setInterval(applyTime, 60000);
+ 
+// == Todo Board (Voxel Sign) ==
+const BOARD_X = -14, BOARD_Z = 16;
+const boardGroup = new THREE.Group();
+ 
+const bPost1 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3, 0.2), getVoxelMat('#5a3820'));
+bPost1.position.set(-1.2, 1.5, 0); boardGroup.add(bPost1);
+const bPost2 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3, 0.2), getVoxelMat('#5a3820'));
+bPost2.position.set(1.2, 1.5, 0); boardGroup.add(bPost2);
+ 
+const bPlank = new THREE.Mesh(new THREE.BoxGeometry(3, 1.5, 0.2), getVoxelMat('#5a3820'));
+bPlank.position.set(0, 2.5, 0.1); boardGroup.add(bPlank);
+ 
+boardGroup.position.set(BOARD_X, getH(BOARD_X, BOARD_Z) + 0.5, BOARD_Z);
+boardGroup.rotation.y = Math.PI / 4;
+scene.add(boardGroup);
+ 
+const paperMeshes = [];
+ 
+function buildPapers(){
+  paperMeshes.forEach(m=>boardGroup.remove(m));
+  paperMeshes.length = 0;
+ 
+  const MAX = 6;
+  const visible = todos.slice(0, MAX);
+  const total = visible.length;
+ 
+  visible.forEach((t, i)=>{
+    const mat = new THREE.MeshStandardMaterial({
+      color: t.done ? '#a09080' : '#e0dfd5',
+      roughness: 1.0,
+    });
+ 
+    const spreadX = total > 1 ? (i/(total-1)) * 2.4 - 1.2 : 0;
+    const spreadY = 2.5 + (i%2 === 0 ? 0.1 : -0.1);
+    
+    const paper = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.5), mat);
+    paper.position.set(spreadX, spreadY, 0.22);
+    
+    // Pixelated tilt
+    paper.rotation.z = i%2===0 ? 0.1 : -0.1;
+ 
+    boardGroup.add(paper);
+    paperMeshes.push(paper);
+  });
+}
+ 
+// == Todo logic ==
+const STORE_KEY = 'vg-todos';
+let todos = [];
+try { todos = JSON.parse(localStorage.getItem(STORE_KEY)) || []; } catch(e){ todos=[]; }
+ 
+function saveTodos(){
+  localStorage.setItem(STORE_KEY, JSON.stringify(todos));
+  buildPapers();
+  buildTaskTrees();
+}
+ 
+function fmtDate(ts){
+  if(!ts) return '';
+  return new Date(ts).toLocaleDateString([],{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+}
+ 
+function renderTodos(){
+  const list = document.getElementById('todo-list');
+  list.innerHTML = '';
+  if(todos.length === 0){
+    list.innerHTML = `<div id="td-empty">Nothing planted yet - type a task below and hit enter.</div>`;
+    return;
+  }
+  todos.forEach((t,i)=>{
+    const item = document.createElement('div');
+    item.className = 'td-item' + (t.done?' done':'');
+    const dateLabel = t.done && t.completedAt
+      ? `Completed ${fmtDate(t.completedAt)}`
+      : `Planted ${fmtDate(t.createdAt || t.id)}`;
+    item.innerHTML = `
+      <div class="td-check">${t.done?'✓':''}</div>
+      <div class="td-body">
+        <span class="td-text">${t.text.replace(/</g,'&lt;')}</span>
+        <span class="td-date">${dateLabel}</span>
+      </div>
+      <button class="td-del" data-i="${i}">×</button>`;
+    item.querySelector('.td-check').addEventListener('click',()=>{ todos[i].done=!todos[i].done; todos[i].completedAt=todos[i].done?Date.now():null; saveTodos(); renderTodos(); });
+    item.querySelector('.td-text').addEventListener('click',()=>{ todos[i].done=!todos[i].done; todos[i].completedAt=todos[i].done?Date.now():null; saveTodos(); renderTodos(); });
+    item.querySelector('.td-del').addEventListener('click',e=>{ e.stopPropagation(); delete treeSpawnTimes[todos[i].id]; todos.splice(i,1); saveTodos(); renderTodos(); });
+    list.appendChild(item);
+  });
+}
+ 
+function addTodo(){
+  const inp = document.getElementById('task-input');
+  const text = inp.value.trim();
+  if(!text) return;
+  todos.unshift({text, done:false, id:Date.now(), createdAt:Date.now()});
+  saveTodos(); renderTodos();
+  inp.value = '';
+  const bar = document.getElementById('task-bar');
+  bar.classList.remove('success');
+  requestAnimationFrame(()=> bar.classList.add('success'));
+  setTimeout(()=> bar.classList.remove('success'), 600);
+}
+ 
+const taskInput = document.getElementById('task-input');
+taskInput.addEventListener('keydown', e=>{
+  if(e.key==='Enter'){ e.preventDefault(); addTodo(); }
+  if(e.key==='Tab'){
+    e.preventDefault();
+    todoPanel.classList.toggle('hidden');
+  }
+});
+canvas.addEventListener('pointerdown', ()=> taskInput.blur());
+ 
+document.getElementById('task-submit').addEventListener('click', addTodo);
+const todoFab = document.getElementById('todo-fab');
+const todoPanel = document.getElementById('todo-panel');
+todoFab.addEventListener('click', e=>{
+  e.stopPropagation();
+  const opening = todoPanel.classList.contains('hidden');
+  todoPanel.classList.add('hidden');
+  panel.classList.add('hidden');
+  if(opening) todoPanel.classList.remove('hidden');
+});
+ 
+document.addEventListener('click', ()=>{
+  if(!panel.classList.contains('hidden')){
+    gooWrap.classList.add('goo-active');
+    clearTimeout(gooWrap._gooTimer);
+    gooWrap._gooTimer=setTimeout(()=>gooWrap.classList.remove('goo-active'), 420);
+  }
+  panel.classList.add('hidden');
+  todoPanel.classList.add('hidden');
+});
+document.getElementById('amb-panel').addEventListener('click', e=>e.stopPropagation());
+document.getElementById('todo-panel').addEventListener('click', e=>e.stopPropagation());
+ 
+renderTodos();
+buildPapers();
+buildTaskTrees();
+ 
+ 
+// == Animate ==
+const clock = new THREE.Clock();
+let frameN=0;
+function animate(){
+  requestAnimationFrame(animate);
+  frameN++;
+  if(IS_MOBILE && frameN%2!==0) return;
+  const elapsed=clock.getElapsedTime();
+  
+  // Voxel lantern swing
+  lanternGroups.forEach(({group, phase})=>{
+    const swing = Math.sin(elapsed*1.4 + phase) * 0.1;
+    group.rotation.x = swing;
+  });
+ 
+  // Grow-in animation for freshly planted cacti
+  const now = performance.now();
+  taskTrees.forEach(entry=>{
+    if(entry.group.scale.x < 0.999){
+      const t = Math.min(1, (now - entry.spawnedAt) / 420);
+      const eased = t>=1 ? 1 : 1 - Math.pow(2, -9*t) * Math.cos(t*12.5);
+      const s = Math.max(0.001, eased);
+      entry.group.scale.set(s, s, s);
+    }
+  });
+ 
+  updatePersistentLabelPositions();
+  
+  // Adjust fog distance based on density slider
+  const targetFar = FOG_BASE / Math.max(0.1, AMB.fogDensity);
+  scene.fog.far += (targetFar - scene.fog.far) * 0.1;
+  
+  controls.update();
+  renderer.render(scene,camera);
+}
+animate();
+</script>
+</body>
+</html>

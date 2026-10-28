@@ -1,0 +1,1936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Skybound Flats</title>
+  <!-- Web Bookmark / Browser Tab Icon -->
+<link rel="icon" type="image/png" href="logo.png">
+    <!-- iPhone / iPad Home Screen Icon -->
+<link rel="apple-touch-icon" href="logo.png">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased}
+body{overflow:hidden;background:#000}
+#c{width:100vw;height:100vh;display:block}
+body::after{
+  content:'';position:fixed;inset:0;z-index:950;pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode:overlay;opacity:.05;
+}
+
+/* ==========================================================================
+   HOW THIS FILE IS ORGANISED (for anyone new to editing front-end code)
+   --------------------------------------------------------------------------
+   1. :root variables      -> the shared colours/sizes used everywhere below
+   2. #app-header           -> the clean top bar with the 4 icon buttons
+   3. #todo-panel            -> the "My Tenants" list popup
+   4. #amb-panel              -> the "Sky Conditions" popup
+   5. #account-panel           -> the "Account" popup
+   6. #task-bar                 -> the input bar pinned to the bottom
+   7. everything else            -> tooltips, floating labels, auth screen
+   All 3 popup panels (todo/amb/account) intentionally share the same
+   background colour, border, shadow and open/close animation so they feel
+   like one consistent design system. If you want to re-skin the app, the
+   variables below are the fastest way to do it.
+   ========================================================================== */
+:root{
+  --g-bg:    rgba(255,255,255,.16);   /* faint glass fill, used on a couple of overlays */
+  --g-bg2:   rgba(255,255,255,.26);   /* a slightly stronger version of the glass fill */
+  --g-border:rgba(255,255,255,.4);    /* glass border colour */
+  --g-shadow:0 8px 32px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.45); /* soft shadow used by the bottom input bar */
+  --g-ink:   rgba(35,28,26,.88);      /* main dark text colour */
+  --g-ink2:  rgba(255,255,255,.65);
+  --g-ink3:  rgba(255,255,255,.4);
+  --g-accent:#c9691f;                 /* the orange accent colour — change this ONE line to re-theme the whole app */
+  --mono:    'SF Mono','Fira Mono','Consolas',monospace; /* the font used everywhere in the UI */
+  --r:       50px;                    /* corner roundness used by the floating hover tooltip */
+  --card-r:  28px;                    /* corner roundness shared by every panel/card (tenants list, sky conditions, account, sign-in card, input bar) — change this ONE value to round all of them at once */
+  --bar-w:   min(580px, calc(100vw - 32px));            /* width of the bottom input bar + tenants panel */
+  --bar-bot: max(28px, env(safe-area-inset-bottom, 28px)); /* gap between the input bar and the bottom of the screen */
+}
+
+/* ==========================================================================
+   HEADER BAR
+   A plain full-width strip fixed to the top of the screen, styled to match
+   the glassy look of the bottom input bar (#task-bar): a translucent white
+   with a heavy blur behind it, so the 3D scene shows through softly.
+   - To change its height, edit `height` here AND the matching panel "top"
+     offsets further down (search "dead center of the screen").
+   - To make it more/less see-through, adjust the opacity in `background`.
+   ========================================================================== */
+#app-header{
+  position:fixed;top:0;left:0;right:0;z-index:901;
+  height:60px;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px;
+  background:rgba(255,255,255,.22);              /* more see-through than the input bar — raise this number if it gets hard to read */
+  backdrop-filter:blur(20px) saturate(1.5);-webkit-backdrop-filter:blur(20px) saturate(1.5);
+  border-bottom:1px solid rgba(255,255,255,.4);
+  box-shadow:0 8px 24px rgba(0,0,0,.1), inset 0 0 20px rgba(255,255,255,.08); /* lighter glow to match the lower opacity */
+}
+.app-header-brand{
+  display:flex;align-items:center;gap:8px;
+  font-family:var(--mono);font-weight:400;font-size:14px;letter-spacing:.01em;
+  color:rgba(20,14,11,.95);                             /* same ink colour as the input bar text, for consistency */
+  user-select:none;
+}
+.app-header-icons{display:flex;align-items:center;gap:2px}
+
+#todo-panel{
+  position:fixed;z-index:901;
+  top:50%;left:50%;               /* dead center of the screen */
+  transform-origin:center center;
+  transform:translate(-50%,-50%) scale(1);
+  width:var(--bar-w);
+  transition:opacity .16s ease-out, transform .16s ease-out;
+  max-height:min(460px,58vh);
+  background:rgba(252,251,249,.97);
+  backdrop-filter:blur(24px) saturate(1.4);-webkit-backdrop-filter:blur(24px) saturate(1.4);
+  border:1px solid rgba(255,255,255,.6);
+  border-radius:var(--card-r);
+  box-shadow:0 24px 60px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.8);
+  display:flex;flex-direction:column;
+  padding:22px 22px 16px;
+  overflow:hidden;
+}
+#todo-panel.hidden{opacity:0;pointer-events:none;transform:translate(-50%,-50%) scale(.97)}
+.tp-header{flex-shrink:0;padding-bottom:14px;margin-bottom:6px;border-bottom:1px solid rgba(40,32,28,.1)}
+.tp-title{font-family:var(--mono);font-size:19px;font-weight:700;color:rgba(30,24,20,.92);margin-bottom:6px}
+.tp-sub{display:flex;align-items:center;justify-content:space-between;font-family:var(--mono);font-size:12px;color:rgba(40,32,28,.5)}
+.tp-count{font-size:12px;color:rgba(40,32,28,.45)}
+.tp-add{
+  flex-shrink:0;margin-top:12px;width:100%;padding:12px;
+  border-radius:50px;border:1.5px dashed rgba(40,32,28,.25);
+  background:none;color:rgba(40,32,28,.55);
+  font-family:var(--mono);font-size:12px;letter-spacing:.03em;
+  cursor:pointer;transition:background .12s,border-color .12s,color .12s;
+  -webkit-tap-highlight-color:transparent;
+}
+.tp-add:hover{background:rgba(40,32,28,.05);border-color:rgba(40,32,28,.4);color:rgba(40,32,28,.8)}
+.tp-add:active{transform:scale(.97);background:rgba(40,32,28,.08)} /* press-down tap feedback */
+
+#amb-panel{
+  position:fixed;z-index:900;
+  top:50%;left:50%;               /* dead center of the screen */
+  transform-origin:center center;
+  transform:translate(-50%,-50%) scale(1);
+  width:min(300px,calc(100vw - 32px));
+  transition:opacity .16s ease-out, transform .16s ease-out;
+  background:rgba(252,251,249,.97);
+  backdrop-filter:blur(24px) saturate(1.4);-webkit-backdrop-filter:blur(24px) saturate(1.4);
+  border:1px solid rgba(255,255,255,.6);
+  border-radius:var(--card-r);
+  padding:14px;
+  box-shadow:0 24px 60px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.8);
+}
+#amb-panel.hidden{
+  opacity:0;pointer-events:none;
+  transform:translate(-50%,-50%) scale(.97);
+}
+#amb-panel .ap-head,#amb-panel #ap-rows{
+  transition:opacity .15s ease .12s;
+}
+#amb-panel.hidden .ap-head,#amb-panel.hidden #ap-rows{
+  opacity:0; transition:opacity .08s ease;
+}
+
+.ap-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding:0 4px}
+.ap-title{font-family:var(--mono);font-size:9px;letter-spacing:.18em;color:rgba(40,32,28,.5);text-transform:uppercase}
+#ap-rows{display:flex;flex-direction:column;gap:8px}
+.ap-row{
+  display:flex;align-items:center;gap:10px;
+  padding:11px 16px;border-radius:50px;
+  background:rgba(40,32,28,.045);
+  border:1px solid rgba(40,32,28,.08);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.6);
+}
+.ap-lbl-text{font-family:var(--mono);font-size:11px;color:rgba(30,24,20,.8);letter-spacing:.02em;flex-shrink:0;width:72px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ap-val{font-family:var(--mono);font-size:11px;color:rgba(30,24,20,.85);min-width:34px;text-align:right;flex-shrink:0}
+.ap-segs{
+  flex:1;display:flex;align-items:center;justify-content:space-between;
+  height:18px;touch-action:none;-webkit-tap-highlight-color:transparent;cursor:pointer;
+}
+.ap-seg{
+  width:5px;height:5px;border-radius:50%;flex-shrink:0;
+  background:rgba(40,32,28,.2);
+  transition:background .12s, width .12s, height .12s, border-radius .12s;
+}
+.ap-seg.peak{
+  width:3px;height:17px;border-radius:2px;
+  background:var(--g-accent);
+  box-shadow:0 0 6px rgba(201,105,31,.4);
+}
+.ap-segs:active .ap-seg.peak{transform:scaleY(1.1)}
+
+.ap-toggle-track { width:36px; height:20px; border-radius:10px; background:rgba(40,32,28,.15); cursor:pointer; transition:background .2s; position:relative; flex-shrink:0; -webkit-tap-highlight-color:transparent; }
+.ap-toggle-track.on { background:var(--g-accent); }
+.ap-toggle-knob { width:16px; height:16px; background:#fff; border-radius:50%; position:absolute; top:2px; left:2px; transition:transform .2s; box-shadow:0 1px 3px rgba(0,0,0,.25); }
+.ap-toggle-track.on .ap-toggle-knob { transform:translateX(16px); }
+
+.ap-reset{
+  width:26px;height:26px;flex-shrink:0;border-radius:50%;padding:0;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(40,32,28,.06);border:1px solid rgba(40,32,28,.12);
+  color:rgba(40,32,28,.5);cursor:pointer;transition:background .12s,color .12s,transform .3s;
+}
+.ap-reset:hover{background:rgba(40,32,28,.12);color:rgba(30,24,20,.9)}
+.ap-reset:active{transform:rotate(-90deg) scale(.9)} /* spin + press-down when tapped */
+
+#todo-list{overflow-y:auto;flex:1;display:flex;flex-direction:column;scrollbar-width:thin;scrollbar-color:rgba(40,32,28,.2) transparent;-webkit-overflow-scrolling:touch}
+.td-item{
+  display:flex;align-items:center;gap:14px;padding:16px 2px;
+  cursor:pointer;
+  border-bottom:1px solid rgba(40,32,28,.08);
+  transition:background .15s;
+  -webkit-tap-highlight-color:transparent;
+}
+.td-item:last-child{border-bottom:none}
+.td-item:hover{background:rgba(40,32,28,.04)}
+.td-item:active{background:rgba(40,32,28,.07)} /* press-down tap feedback */
+.td-item.done{opacity:.55}
+.td-item.done .td-text{text-decoration:line-through}
+.td-check{
+  order:2;width:22px;height:22px;border-radius:50%;
+  border:2px solid rgba(40,32,28,.22);
+  flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  transition:all .22s;color:#fff;font-size:12px;
+}
+.td-item.done .td-check{background:var(--g-accent);border-color:var(--g-accent);color:#fff}
+.td-text{font-family:var(--mono);font-size:14px;font-weight:600;color:rgba(30,24,20,.9);flex:1;word-break:break-word;line-height:1.4}
+.td-body{order:1;display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
+.td-date{font-family:var(--mono);font-size:11px;color:rgba(40,32,28,.45);letter-spacing:.01em}
+.td-del{order:3;background:none;border:none;color:rgba(40,32,28,.3);font-size:16px;cursor:pointer;padding:3px 5px;flex-shrink:0;transition:color .12s;-webkit-tap-highlight-color:transparent}
+.td-del:hover{color:rgba(200,60,60,.9)}
+.td-del:active{color:rgba(200,60,60,.9);transform:scale(.85)} /* press-down tap feedback */
+#td-empty{
+  font-family:var(--mono);font-size:12px;color:rgba(40,32,28,.55);
+  text-align:center;padding:26px 16px;letter-spacing:.02em;line-height:1.5;
+}
+.td-completed-toggle{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:11px 2px;cursor:pointer;
+  border-bottom:1px solid rgba(40,32,28,.08);
+  font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;
+  color:rgba(40,32,28,.5);transition:color .12s;
+  -webkit-tap-highlight-color:transparent;
+}
+.td-completed-toggle:hover{color:rgba(40,32,28,.85)}
+.td-chevron{font-size:8px}
+
+#task-bar{
+  position:fixed;
+  bottom:var(--bar-bot);
+  left:50%;transform:translateX(-50%);
+  width:var(--bar-w);
+  background:rgba(255,255,255,.22);              /* same transparency as the header, for a cohesive glass look */
+  backdrop-filter:blur(20px) saturate(1.5);-webkit-backdrop-filter:blur(20px) saturate(1.5);
+  border:1px solid rgba(255,255,255,.4);
+  border-radius:var(--card-r);
+  box-shadow:0 8px 24px rgba(0,0,0,.1), inset 0 0 20px rgba(255,255,255,.08); /* lighter glow to match the lower opacity */
+  display:flex;align-items:center;
+  height:56px;padding:0 6px;
+  z-index:900;
+}
+/* Icon buttons inside the header (settings / eye / tasks / account).
+   `color` below = icon colour at rest, `.active` = colour when that
+   panel is currently open. The drop-shadow keeps icons visible no matter
+   what's behind the glass (sky, building, clouds, etc). */
+#settings-fab,.app-header-icons #todo-fab,.app-header-icons #eye-fab,.app-header-icons #account-fab{
+  width:40px;height:40px;flex-shrink:0;
+  background:none;border:none;
+  color:rgba(25,18,15,.85);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:12px;
+  filter:drop-shadow(0 1px 2px rgba(255,255,255,.4));
+  transition:color .12s,background .12s,transform .1s;
+  -webkit-tap-highlight-color:transparent;
+}
+#settings-fab:hover,.app-header-icons #todo-fab:hover,.app-header-icons #eye-fab:hover,.app-header-icons #account-fab:hover{color:rgba(15,10,8,1);background:rgba(255,255,255,.4)}
+/* PRESS-DOWN FEEDBACK: shrinks the button slightly + brightens the background
+   the instant it's tapped/clicked, so every tap feels responsive on mobile.
+   `:active` fires on both touch and mouse, no extra JS needed. */
+#settings-fab:active,.app-header-icons #todo-fab:active,.app-header-icons #eye-fab:active,.app-header-icons #account-fab:active{background:rgba(255,255,255,.5);transform:scale(.86)}
+#settings-fab.active,#eye-fab.active{color:var(--g-accent);background:rgba(255,255,255,.35)}
+#eye-fab.active:hover{color:#e0862f}
+#task-input{
+  flex:1;height:100%;background:none;border:none;outline:none;
+  font-family:var(--mono);font-size:14px;font-weight:600;
+  color:rgba(20,14,11,.95);caret-color:var(--g-accent);
+  padding:0 18px;-webkit-appearance:none;min-width:0;
+}
+#task-input::placeholder{color:rgba(40,30,26,.55);font-style:italic;font-weight:400}
+#task-submit{
+  display:none;flex-shrink:0;width:36px;height:36px;
+  border-radius:50%;background:#fff;
+  border:none;color:rgba(40,32,28,.85);cursor:pointer;
+  align-items:center;justify-content:center;
+  transition:transform .12s, box-shadow .12s;margin-right:4px;
+  box-shadow:0 3px 10px rgba(0,0,0,.18);
+  -webkit-tap-highlight-color:transparent;
+}
+#task-submit:active{transform:scale(.92)}
+
+#task-input:focus-visible{outline:none}
+#todo-fab:focus-visible,#eye-fab:focus-visible,#task-submit:focus-visible,#settings-fab:focus-visible,
+.td-item:focus-visible,.td-del:focus-visible,.ap-reset:focus-visible{
+  outline:2px solid rgba(226,147,90,.8);outline-offset:2px;
+}
+
+@keyframes barPulse{
+  0%{box-shadow:var(--g-shadow), inset 0 0 30px rgba(255,255,255,.025), 0 0 0 0 rgba(226,147,90,.55)}
+  100%{box-shadow:var(--g-shadow), inset 0 0 30px rgba(255,255,255,.025), 0 0 0 16px rgba(226,147,90,0)}
+}
+#task-bar.success{animation:barPulse .55s ease-out}
+
+@media (max-width:640px){
+  :root{--bar-bot:max(20px,env(safe-area-inset-bottom,20px))}
+  #task-bar{height:52px;padding:0 4px;width:calc(100vw - 140px);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  #task-input{font-size:16px;padding:0 10px}
+  #task-submit{display:flex}
+  /* Shorter header on small screens, and the panels below shrink their
+     top offset to match (header height + 12px gap). */
+  #app-header{height:52px;padding:0 14px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  .app-header-brand span:last-child{display:none} /* hide "Skybound Flats" text, keep the 🏠 to save space */
+  #settings-fab,.app-header-icons #todo-fab,.app-header-icons #eye-fab,.app-header-icons #account-fab{width:38px;height:38px}
+  #amb-panel{width:calc(100vw - 24px);padding:14px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  #todo-panel{width:calc(100vw - 24px);max-height:min(320px,52vh)}
+  .td-item{padding:14px 2px}
+  .td-check{width:22px;height:22px}
+  .td-text{font-size:13px}
+}
+
+#lamp-tooltip{
+  position:fixed;pointer-events:none;z-index:999;
+  background:rgba(255,255,255,.25);backdrop-filter:blur(16px) saturate(1.4);-webkit-backdrop-filter:blur(16px) saturate(1.4);
+  border:1px solid rgba(255,255,255,.4);border-radius:var(--r);
+  padding:8px 13px;font-family:var(--mono);font-size:12px;color:#fff;
+  max-width:min(240px,72vw);line-height:1.5;
+  box-shadow:0 6px 20px rgba(0,0,0,.15), inset 0 1px 0 rgba(255,255,255,.5);transition:opacity .1s;
+  text-shadow:0 1px 3px rgba(0,0,0,.3);
+}
+#lamp-tooltip.hidden{opacity:0}
+
+.tree-label{
+  position:fixed;z-index:998;pointer-events:none;
+  transform:translate(-50%,-100%);
+  background:rgba(255,255,255,.28);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);
+  border:1px solid rgba(255,255,255,.4);border-radius:8px;
+  padding:5px 10px;font-family:var(--mono);font-size:11px;color:#fff;
+  white-space:nowrap;max-width:160px;overflow:hidden;text-overflow:ellipsis;
+  box-shadow:0 4px 14px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.5);
+  transition:left .12s linear, top .12s linear;
+  text-shadow:0 1px 3px rgba(0,0,0,.3);
+}
+.label-dot{
+  position:fixed;z-index:997;pointer-events:none;
+  width:6px;height:6px;border-radius:50%;
+  background:#ffd9a0;box-shadow:0 0 6px rgba(255,200,120,.9);
+  transform:translate(-50%,-50%);
+  transition:left .12s linear, top .12s linear;
+}
+#label-lines{position:fixed;inset:0;z-index:996;pointer-events:none;width:100vw;height:100vh}
+
+#lightning-flash{
+  position:fixed;inset:0;z-index:945;pointer-events:none;
+  background:#eef3ff;opacity:0;mix-blend-mode:screen;
+}
+#lightning-flash.flash{ animation:lightningFlash .28s ease-out; }
+@keyframes lightningFlash{
+  0%{opacity:0}
+  8%{opacity:.9}
+  18%{opacity:.05}
+  28%{opacity:.55}
+  100%{opacity:0}
+}
+
+.ap-weather-row{gap:8px}
+.aw-segs{display:flex;gap:5px;flex:1}
+/* Weather buttons: same stroke-icon style as the header (clean lines, no
+   emoji). `.active` = the currently selected weather. */
+.aw-opt{
+  flex:1;padding:8px 0;border-radius:14px;border:1px solid rgba(40,32,28,.12);
+  background:rgba(40,32,28,.04);color:rgba(30,24,20,.65);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;transition:background .15s,border-color .15s,color .15s;
+  -webkit-tap-highlight-color:transparent;
+}
+.aw-opt.active{background:#fff;border-color:var(--g-accent);color:var(--g-accent);box-shadow:0 2px 8px rgba(0,0,0,.1)}
+.aw-opt:hover:not(.active){background:rgba(40,32,28,.09)}
+.aw-opt:active{transform:scale(.88)} /* press-down tap feedback */
+.ap-row-divider{width:1px;height:20px;background:rgba(40,32,28,.12);flex-shrink:0}
+.ap-cloud-icon{display:flex;align-items:center;flex-shrink:0;color:rgba(40,32,28,.55)}
+
+/* == Auth overlay == */
+#auth-overlay{
+  position:fixed;inset:0;z-index:970;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(20,16,14,.35);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  padding:20px;
+  transition:opacity .2s ease;
+}
+#auth-overlay.hidden{opacity:0;pointer-events:none}
+.auth-card{
+  width:min(360px,100%);
+  background:rgba(252,251,249,.97);
+  backdrop-filter:blur(24px) saturate(1.4);-webkit-backdrop-filter:blur(24px) saturate(1.4);
+  border:1px solid rgba(255,255,255,.6);
+  border-radius:var(--card-r);
+  box-shadow:0 24px 60px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.8);
+  padding:26px 26px 22px;
+}
+.auth-title{font-family:var(--mono);font-size:19px;font-weight:700;color:rgba(30,24,20,.92);margin-bottom:4px}
+.auth-sub{font-family:var(--mono);font-size:12px;color:rgba(40,32,28,.55);margin-bottom:18px;line-height:1.5}
+.auth-tabs{display:flex;gap:4px;background:rgba(40,32,28,.06);border-radius:50px;padding:4px;margin-bottom:16px}
+.auth-tab{
+  flex:1;padding:8px 0;border:none;background:none;border-radius:50px;
+  font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.02em;
+  color:rgba(40,32,28,.5);cursor:pointer;transition:background .15s,color .15s;
+  -webkit-tap-highlight-color:transparent;
+}
+.auth-tab.active{background:#fff;color:rgba(30,24,20,.92);box-shadow:0 2px 8px rgba(0,0,0,.1)}
+.auth-tab:active{transform:scale(.96)} /* press-down tap feedback */
+.auth-field{margin-bottom:12px}
+.auth-field label{display:block;font-family:var(--mono);font-size:11px;color:rgba(40,32,28,.5);margin-bottom:5px;letter-spacing:.02em}
+.auth-field input{
+  width:100%;padding:11px 14px;border-radius:16px;
+  border:1px solid rgba(40,32,28,.15);background:rgba(255,255,255,.6);
+  font-family:var(--mono);font-size:14px;color:rgba(20,14,11,.95);
+  outline:none;transition:border-color .12s;
+}
+.auth-field input:focus{border-color:var(--g-accent)}
+.auth-submit{
+  width:100%;padding:13px;margin-top:6px;border:none;border-radius:50px;
+  background:var(--g-accent);color:#fff;font-family:var(--mono);font-size:13px;font-weight:700;
+  letter-spacing:.02em;cursor:pointer;transition:transform .1s,opacity .12s;
+  -webkit-tap-highlight-color:transparent;
+}
+.auth-submit:active{transform:scale(.97)}
+.auth-submit:disabled{opacity:.55;cursor:default}
+.auth-error{
+  font-family:var(--mono);font-size:11px;color:#b23b3b;margin-top:10px;line-height:1.5;
+  display:none;
+}
+.auth-error.show{display:block}
+.auth-note{
+  font-family:var(--mono);font-size:11px;color:rgba(40,32,28,.55);margin-top:10px;line-height:1.5;
+  display:none;
+}
+.auth-note.show{display:block}
+.auth-divider{
+  display:flex;align-items:center;gap:10px;margin:18px 0 14px;
+  font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:rgba(40,32,28,.35);
+}
+.auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:rgba(40,32,28,.12)}
+.auth-guest{
+  width:100%;padding:12px;border-radius:50px;border:1.5px dashed rgba(40,32,28,.25);
+  background:none;color:rgba(40,32,28,.6);font-family:var(--mono);font-size:12px;letter-spacing:.02em;
+  cursor:pointer;transition:background .12s,border-color .12s,color .12s;
+  -webkit-tap-highlight-color:transparent;
+}
+.auth-guest:hover{background:rgba(40,32,28,.05);border-color:rgba(40,32,28,.4);color:rgba(40,32,28,.85)}
+.auth-guest:active{transform:scale(.98);background:rgba(40,32,28,.08)} /* press-down tap feedback */
+
+#account-panel{
+  position:fixed;z-index:900;
+  top:50%;left:50%;               /* dead center of the screen */
+  transform-origin:center center;
+  transform:translate(-50%,-50%) scale(1);
+  width:min(280px,calc(100vw - 32px));
+  transition:opacity .16s ease-out, transform .16s ease-out;
+  background:rgba(252,251,249,.97);
+  backdrop-filter:blur(24px) saturate(1.4);-webkit-backdrop-filter:blur(24px) saturate(1.4);
+  border:1px solid rgba(255,255,255,.6);
+  border-radius:var(--card-r);
+  padding:16px;
+  box-shadow:0 24px 60px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.8);
+}
+#account-panel.hidden{opacity:0;pointer-events:none;transform:translate(-50%,-50%) scale(.97)}
+.acc-status{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+.acc-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.acc-dot.synced{background:#6fcf7a;box-shadow:0 0 8px rgba(111,207,122,.7)}
+.acc-dot.guest{background:rgba(40,32,28,.3)}
+.acc-label{font-family:var(--mono);font-size:12px;color:rgba(30,24,20,.92);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acc-desc{font-family:var(--mono);font-size:10.5px;color:rgba(40,32,28,.55);line-height:1.5;margin-bottom:12px}
+.acc-btn{
+  width:100%;padding:10px;border-radius:50px;border:1px solid rgba(40,32,28,.15);
+  background:rgba(40,32,28,.05);color:rgba(30,24,20,.85);font-family:var(--mono);font-size:11.5px;font-weight:600;
+  letter-spacing:.02em;cursor:pointer;transition:background .12s;-webkit-tap-highlight-color:transparent;
+}
+.acc-btn:hover{background:rgba(40,32,28,.1)}
+.acc-btn:active{transform:scale(.97)} /* press-down tap feedback */
+
+#account-fab.active{color:var(--g-accent);background:rgba(255,255,255,.35)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<svg id="label-lines"></svg>
+<div id="lightning-flash"></div>
+<div id="lamp-tooltip" class="hidden"></div>
+<!-- ==========================================================================
+     HEADER
+     A simple fixed bar across the top of the screen. Left = app name,
+     right = the 4 icon buttons that each open a panel below:
+       settings-fab -> Sky Conditions panel
+       eye-fab      -> toggles all apartment name labels on/off
+       todo-fab     -> My Tenants panel
+       account-fab  -> Account panel
+     Don't rename these `id`s — the JavaScript further down looks them up
+     by these exact names.
+     ========================================================================== -->
+<header id="app-header">
+  <div class="app-header-brand">
+    <span>🏠</span>
+    <span>Skybound Flats</span>
+  </div>
+  <div class="app-header-icons">
+    <button id="settings-fab" title="Ambience settings">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="4" y1="6" x2="20" y2="6"/><circle cx="14" cy="6" r="2" fill="currentColor" stroke="none"/>
+        <line x1="4" y1="12" x2="20" y2="12"/><circle cx="8" cy="12" r="2" fill="currentColor" stroke="none"/>
+        <line x1="4" y1="18" x2="20" y2="18"/><circle cx="16" cy="18" r="2" fill="currentColor" stroke="none"/>
+      </svg>
+    </button>
+    <button id="eye-fab" title="Show all apartment labels">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/>
+        <line id="eye-slash" x1="3" y1="3" x2="21" y2="21" style="display:none"/>
+      </svg>
+    </button>
+    <button id="todo-fab" title="Tasks">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 12l5 5L22 4"/><path d="M2 19l5 5L22 11" opacity=".45"/>
+      </svg>
+    </button>
+    <button id="account-fab" title="Account">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+      </svg>
+    </button>
+  </div>
+</header>
+<div id="amb-panel" class="hidden">
+  <div class="ap-head">
+    <span class="ap-title">Sky Conditions</span>
+    <button class="ap-reset" id="ap-reset" title="Reset to defaults">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
+        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+      </svg>
+    </button>
+  </div>
+  <div id="ap-rows"></div>
+</div>
+
+<div id="account-panel" class="hidden">
+  <div class="acc-status">
+    <span class="acc-dot guest" id="acc-dot"></span>
+    <span class="acc-label" id="acc-label">Guest mode</span>
+  </div>
+  <div class="acc-desc" id="acc-desc">Tenants are saved on this device only.</div>
+  <button class="acc-btn" id="acc-action">Sign in to sync</button>
+</div>
+
+<div id="auth-overlay" class="hidden">
+  <div class="auth-card">
+    <div class="auth-title">Skybound Flats</div>
+    <div class="auth-sub">Sign in to sync your tenants across every device, or stay local as a guest.</div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" data-tab="signin">Sign In</button>
+      <button class="auth-tab" data-tab="signup">Sign Up</button>
+    </div>
+    <form id="auth-form" autocomplete="on">
+      <div class="auth-field">
+        <label for="auth-email">Email</label>
+        <input id="auth-email" type="email" required autocomplete="email" placeholder="you@example.com">
+      </div>
+      <div class="auth-field">
+        <label for="auth-password">Password</label>
+        <input id="auth-password" type="password" required autocomplete="current-password" minlength="6" placeholder="••••••••">
+      </div>
+      <button type="submit" class="auth-submit" id="auth-submit">Sign In</button>
+      <div class="auth-error" id="auth-error"></div>
+      <div class="auth-note" id="auth-note"></div>
+    </form>
+    <div class="auth-divider">or</div>
+    <button class="auth-guest" id="auth-guest">Continue as Guest</button>
+  </div>
+</div>
+
+<div id="todo-panel" class="hidden">
+  <div class="tp-header">
+    <div class="tp-title">My Tenants</div>
+    <div class="tp-sub">
+      <span>📅 <span id="tp-date-text"></span></span>
+      <span class="tp-count" id="tp-count"></span>
+    </div>
+  </div>
+  <div id="todo-list"></div>
+  <button class="tp-add" id="tp-add">+ Add Tenant</button>
+</div>
+
+<div id="task-bar">
+  <input id="task-input" type="text" placeholder="move a new tenant in..." maxlength="120" autocomplete="off" spellcheck="false">
+  <button id="task-submit" title="Add task">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 12h14M12 5l7 7-7 7"/>
+    </svg>
+  </button>
+</div>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/controls/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+// Supabase is loaded dynamically (not a static import) so that if the CDN
+// hiccups, it can't take the whole module - and therefore the entire 3D
+// scene - down with it. The app just falls back to local guest mode.
+let createClient = null;
+try {
+  ({ createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'));
+} catch(err){
+  console.error('Supabase SDK failed to load, falling back to guest-only mode:', err);
+}
+
+const IS_MOBILE = window.innerWidth <= 768 || ('ontouchstart' in window);
+
+// == Renderer ==
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !IS_MOBILE, powerPreference:'high-performance' });
+renderer.setPixelRatio(IS_MOBILE ? 1 : Math.min(devicePixelRatio, 1.5));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.LinearToneMapping;
+renderer.toneMappingExposure = 1.0;
+
+window.addEventListener('resize',()=>{
+  renderer.setSize(innerWidth,innerHeight);
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// == Scene ==
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#bcd2f0');
+scene.fog = new THREE.FogExp2('#cfe0f5', 0.0035);
+
+// == Sky dome ==
+const skyGeo = new THREE.SphereGeometry(320, 32, 15);
+const skyMat = new THREE.ShaderMaterial({
+  uniforms: {
+    topColor: { value: new THREE.Color('#8fb6e8') },
+    bottomColor: { value: new THREE.Color('#f3dfe6') }
+  },
+  vertexShader: `
+    varying vec3 vWorldPosition;
+    void main() {
+      vec4 worldPosition = modelMatrix * vec4( position, 1.0 );
+      vWorldPosition = worldPosition.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+    }
+  `,
+  fragmentShader: `
+    uniform vec3 topColor;
+    uniform vec3 bottomColor;
+    varying vec3 vWorldPosition;
+    void main() {
+      float h = normalize(vWorldPosition).y;
+      vec3 col = mix(bottomColor, topColor, max(pow(max(h, 0.0), 0.7), 0.0));
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+  side: THREE.BackSide,
+  fog: false
+});
+scene.add(new THREE.Mesh(skyGeo, skyMat));
+
+// == Building constants (voxel grid, centered at world origin) ==
+const W = 9, D = 7, BASE_Y = 16, FLOOR_H = 4, LOBBY = 2, ROOF_H = 3, FLOORS = 6;
+const H = LOBBY + FLOORS*FLOOR_H + ROOF_H;
+const COLX = [1,3,5,7];
+const SLOTS_PER_FLOOR = COLX.length;
+const TOTAL_SLOTS = FLOORS * SLOTS_PER_FLOOR;
+const towerGroup = new THREE.Group();
+scene.add(towerGroup);
+
+function slotWorldPos(slot){
+  const f = Math.floor(slot / SLOTS_PER_FLOOR);
+  const col = slot % SLOTS_PER_FLOOR;
+  const voxX = COLX[col];
+  const voxY0 = LOBBY + f*FLOOR_H + 1;
+  return {
+    x: voxX - (W-1)/2,
+    y: voxY0 + 1.0, // local y within tower group (tower group itself sits at BASE_Y)
+    z: (D-1)/2,
+    floor: f, col
+  };
+}
+
+// == Camera ==
+const camera = new THREE.PerspectiveCamera(52, innerWidth/innerHeight, 0.5, 500);
+const TOWER_FOCUS_Y = BASE_Y + H * 0.5; // vertical center of the building
+camera.position.set(18, TOWER_FOCUS_Y + 16, 56);
+camera.lookAt(0, TOWER_FOCUS_Y, 0);
+
+// == Controls ==
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(0, TOWER_FOCUS_Y, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 24;
+controls.maxDistance = 130;
+controls.zoomSpeed = 0.17;
+controls.minPolarAngle = Math.PI * 0.08;
+controls.maxPolarAngle = Math.PI * 0.46;
+controls.update();
+
+// == Lighting ==
+const hemi = new THREE.HemisphereLight(0xffffff, 0x4a4060, 0.65);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff2e0, 1.3);
+sun.position.set(50, 90, 30);
+sun.castShadow = true;
+sun.shadow.camera.left = -40; sun.shadow.camera.right = 40;
+sun.shadow.camera.top = 40; sun.shadow.camera.bottom = -40;
+sun.shadow.camera.near = 0.5; sun.shadow.camera.far = 200;
+sun.shadow.bias = -0.001;
+const SHADOW_RES = IS_MOBILE ? 1024 : 1536;
+sun.shadow.mapSize.width = SHADOW_RES; sun.shadow.mapSize.height = SHADOW_RES;
+scene.add(sun);
+
+const nightFill = new THREE.PointLight(0x8aa6ff, 0, 120);
+nightFill.position.set(0, 30, 0);
+scene.add(nightFill);
+
+const decorLights = []; // {light, base}
+
+// == Ambience settings ==
+// AMB holds the current "Sky Conditions" values, all controlled from the
+// Sky Conditions panel. `defaults` (just below) is what the reset button
+// restores these to — edit those starting numbers if you want the app to
+// open in a different mood by default.
+const AMB = { brightness: 1.0, fogDensity: 1.0, clouds: true, weather: 'clear' };
+const FOG_BASE = 0.0035;
+const defaults = {...AMB};
+
+// == Shared materials / geometry cache ==
+const matsCache = {};
+function getMat(hex){
+  if(!matsCache[hex]) matsCache[hex] = new THREE.MeshStandardMaterial({ color:hex, roughness:0.92, metalness:0.0 });
+  return matsCache[hex];
+}
+const geoCache = {};
+function getBoxGeo(w,h,d){
+  const k = w+'_'+h+'_'+d;
+  if(!geoCache[k]) geoCache[k] = new THREE.BoxGeometry(w,h,d);
+  return geoCache[k];
+}
+
+// == Concrete shell (hollow boundary box with carved window openings) ==
+const BANDS = [
+  { yMax: LOBBY, hex: '#8d8478' },                      // base / stoop
+  { yMax: LOBBY + FLOORS*FLOOR_H, hex: '#e6dac8' },     // cream facade
+  { yMax: H, hex: '#6b6258' }                            // roof parapet
+];
+function bandHex(y){
+  for(const b of BANDS) if(y < b.yMax) return b.hex;
+  return BANDS[BANDS.length-1].hex;
+}
+
+function buildShell(){
+  const windowCells = new Set();
+  for(let slot=0; slot<TOTAL_SLOTS; slot++){
+    const p = slotWorldPos(slot);
+    const voxX = COLX[p.col];
+    const voxY0 = LOBBY + p.floor*FLOOR_H + 1;
+    windowCells.add(voxX+'_'+voxY0+'_'+(D-1));
+    windowCells.add(voxX+'_'+(voxY0+1)+'_'+(D-1));
+  }
+  const blocks = {};
+  for(let x=0; x<W; x++){
+    for(let z=0; z<D; z++){
+      for(let y=0; y<H; y++){
+        const isBoundary = (x===0||x===W-1||z===0||z===D-1||y===0||y===H-1);
+        if(!isBoundary) continue;
+        if(windowCells.has(x+'_'+y+'_'+z)) continue;
+        const hex = bandHex(y);
+        (blocks[hex] ||= []).push({x: x-(W-1)/2, y, z: z-(D-1)/2});
+      }
+    }
+  }
+  const dummy = new THREE.Object3D();
+  for(const hex in blocks){
+    const pts = blocks[hex];
+    const mesh = new THREE.InstancedMesh(getBoxGeo(1,1,1), getMat(hex), pts.length);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    pts.forEach((p,i)=>{
+      dummy.position.set(p.x, p.y, p.z);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    towerGroup.add(mesh);
+  }
+}
+buildShell();
+
+// == Rooftop details ==
+function buildRoofDetails(){
+  const roofY = H + 0.5;
+  // water tank
+  const tankBody = new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.1,1.6,10), getMat('#a3897a'));
+  tankBody.position.set(-2.5, roofY+0.8, -1);
+  tankBody.castShadow = true;
+  towerGroup.add(tankBody);
+  const tankRoof = new THREE.Mesh(new THREE.ConeGeometry(1.3,0.9,10), getMat('#6b5648'));
+  tankRoof.position.set(-2.5, roofY+1.65, -1);
+  towerGroup.add(tankRoof);
+  for(const [dx,dz] of [[-1.7,-0.4],[-3.3,-0.4],[-1.7,-1.6],[-3.3,-1.6]]){
+    const leg = new THREE.Mesh(getBoxGeo(0.12,1.4,0.12), getMat('#3a332c'));
+    leg.position.set(-2.5+dx+1.7, roofY+0, -1+dz+0.4);
+    towerGroup.add(leg);
+  }
+  // antenna with blinking light
+  const mast = new THREE.Mesh(getBoxGeo(0.12,3.4,0.12), getMat('#3a332c'));
+  mast.position.set(2.5, roofY+1.4, 1.5);
+  towerGroup.add(mast);
+  const blinkMat = new THREE.MeshStandardMaterial({color:'#ff3344', emissive:'#ff3344', emissiveIntensity:2});
+  const blinkLight = new THREE.Mesh(new THREE.SphereGeometry(0.12,8,8), blinkMat);
+  blinkLight.position.set(2.5, roofY+3.0, 1.5);
+  towerGroup.add(blinkLight);
+  towerGroup.userData.blinkMat = blinkMat;
+  // rooftop planter boxes
+  for(let i=0;i<3;i++){
+    const box = new THREE.Mesh(getBoxGeo(0.7,0.3,0.5), getMat('#7a5a42'));
+    box.position.set(0.8+i*0.9, roofY+0.15, -2.4);
+    towerGroup.add(box);
+    const plant = new THREE.Mesh(getBoxGeo(0.45,0.4,0.3), getMat('#5a8a4a'));
+    plant.position.set(0.8+i*0.9, roofY+0.5, -2.4);
+    towerGroup.add(plant);
+  }
+}
+buildRoofDetails();
+
+// == Lobby entrance canopy ==
+function buildEntrance(){
+  const canopy = new THREE.Mesh(getBoxGeo(2.6,0.15,1.2), getMat('#3a332c'));
+  canopy.position.set(0, LOBBY+0.4, (D-1)/2+0.6);
+  towerGroup.add(canopy);
+  const sign = new THREE.Mesh(getBoxGeo(1.6,0.5,0.08), getMat('#3a332c'));
+  sign.position.set(0, LOBBY+1.1, (D-1)/2+0.05);
+  towerGroup.add(sign);
+  const lampMat = new THREE.MeshStandardMaterial({color:'#ffd9a0', emissive:'#ffaa55', emissiveIntensity:2});
+  [-1.0,1.0].forEach(dx=>{
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.1,8,8), lampMat);
+    lamp.position.set(dx, LOBBY+0.25, (D-1)/2+0.65);
+    towerGroup.add(lamp);
+  });
+}
+buildEntrance();
+
+// == Hanging roots / debris beneath the floating base ==
+function buildHangingBase(){
+  const rockMat = getMat('#5a4f44');
+  for(let i=0;i<14;i++){
+    const len = 1.2 + Math.random()*3.2;
+    const root = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.18,len,5), rockMat);
+    const ang = Math.random()*Math.PI*2;
+    const r = Math.random()*3.2;
+    root.position.set(Math.cos(ang)*r, -len/2, Math.sin(ang)*r);
+    root.rotation.z = (Math.random()-0.5)*0.3;
+    root.rotation.x = (Math.random()-0.5)*0.3;
+    towerGroup.add(root);
+  }
+  for(let i=0;i<10;i++){
+    const s = 0.5 + Math.random()*0.9;
+    const clump = new THREE.Mesh(getBoxGeo(s,s*0.7,s), rockMat);
+    const ang = Math.random()*Math.PI*2;
+    const r = Math.random()*3.4;
+    clump.position.set(Math.cos(ang)*r, -0.3-Math.random()*0.6, Math.sin(ang)*r);
+    clump.rotation.y = Math.random()*Math.PI;
+    clump.castShadow = true;
+    towerGroup.add(clump);
+  }
+}
+buildHangingBase();
+
+// == Apartment windows ==
+const FRAME_MAT = new THREE.MeshStandardMaterial({ color:'#f4ecdd', roughness:0.85 });
+const LEDGE_MAT = new THREE.MeshStandardMaterial({ color:'#d8c9ad', roughness:0.9 });
+const HIT_MAT = new THREE.MeshBasicMaterial({ visible:false });
+
+const apartmentUnits = [];
+const windowSpawnTimes = {};
+let apartmentHitMeshes = [];
+
+function spawnApartmentUnit(slot, todo){
+  const p = slotWorldPos(slot);
+  const g = new THREE.Group();
+
+  const frame = new THREE.Mesh(getBoxGeo(1.0,1.7,0.18), FRAME_MAT);
+  frame.position.set(0,0,0);
+  g.add(frame);
+
+  const isVacant = !todo;
+  const isActive = !isVacant && !todo.done;
+
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: isActive ? '#ffd9a0' : (isVacant ? '#5a6b82' : '#3a4452'),
+    emissive: isActive ? '#ffb155' : '#000000',
+    emissiveIntensity: isActive ? 2.2 : 0,
+    roughness: 0.35,
+    transparent: true,
+    opacity: isActive ? 0.95 : 0.85
+  });
+  const glass = new THREE.Mesh(getBoxGeo(0.82,1.5,0.06), glassMat);
+  glass.position.set(0,0,0.13);
+  g.add(glass);
+
+  // window mullion cross
+  const mullV = new THREE.Mesh(getBoxGeo(0.05,1.5,0.07), FRAME_MAT);
+  mullV.position.set(0,0,0.14); g.add(mullV);
+  const mullH = new THREE.Mesh(getBoxGeo(0.82,0.05,0.07), FRAME_MAT);
+  mullH.position.set(0,0,0.14); g.add(mullH);
+
+  // ledge / balcony
+  const ledge = new THREE.Mesh(getBoxGeo(1.1,0.12,0.5), LEDGE_MAT);
+  ledge.position.set(0,-0.92,0.35);
+  ledge.castShadow = true;
+  g.add(ledge);
+
+  // porch light bulb
+  const bulbMat = new THREE.MeshStandardMaterial({
+    color: isActive ? '#ffe9b0' : '#888888',
+    emissive: isActive ? '#ffcc66' : '#000000',
+    emissiveIntensity: isActive ? 2.8 : 0
+  });
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.07,8,8), bulbMat);
+  bulb.position.set(0.55,0.78,0.16);
+  g.add(bulb);
+
+  const hitMesh = new THREE.Mesh(getBoxGeo(1.3,2.2,1.0), HIT_MAT);
+  hitMesh.position.set(0,0,0.3);
+  g.add(hitMesh);
+
+  g.position.set(p.x, p.y, p.z + 0.04);
+
+  const key = todo ? todo.id : ('vacant-'+slot);
+  const isNew = !(key in windowSpawnTimes);
+  if(isNew) windowSpawnTimes[key] = performance.now();
+  g.scale.setScalar(isNew && todo ? 0.001 : 1);
+  towerGroup.add(g);
+
+  const label = todo ? todo.text : 'Vacant';
+  const entry = { group:g, glassMat, bulbMat, hitMesh, todo, isVacant, spawnedAt: windowSpawnTimes[key], label };
+  hitMesh.userData.unitEntry = entry;
+  apartmentUnits.push(entry);
+  return entry;
+}
+
+function buildApartmentUnits(){
+  apartmentUnits.forEach(u=>towerGroup.remove(u.group));
+  apartmentUnits.length = 0;
+
+  for(let slot=0; slot<TOTAL_SLOTS; slot++){
+    const todo = slot < todos.length ? todos[slot] : null;
+    spawnApartmentUnit(slot, todo);
+  }
+  apartmentHitMeshes = apartmentUnits.map(u=>u.hitMesh);
+  buildPersistentLabels();
+}
+
+// == Hover / tooltip ==
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let hoveredUnit = null;
+const tooltip = document.getElementById('lamp-tooltip');
+
+let labelsAlwaysOn = false;
+const persistentLabels = [];
+
+function buildPersistentLabels(){
+  persistentLabels.forEach(p=>{ p.el.remove(); p.dot.remove(); });
+  persistentLabels.length = 0;
+  if(!labelsAlwaysOn) return;
+
+  apartmentUnits.forEach(entry=>{
+    if(entry.isVacant || entry.todo.done) return;
+    const el = document.createElement('div');
+    el.className = 'tree-label';
+    el.textContent = '🏠 ' + entry.label;
+    document.body.appendChild(el);
+    const dot = document.createElement('div');
+    dot.className = 'label-dot';
+    document.body.appendChild(dot);
+    persistentLabels.push({el, dot, entry, anchorX:0, anchorY:0, labelX:0, labelY:0});
+  });
+}
+
+const LABEL_MIN_GAP = 168;   // min horizontal spacing between label centers (matches CSS max-width + margin)
+const LABEL_ROW_BAND = 26;   // anchors within this many px of vertical distance are treated as the same row
+const labelLinesSvg = document.getElementById('label-lines');
+const topControlsEl = document.getElementById('app-header'); // keeps floating labels from appearing under the header
+const ambPanelEl = document.getElementById('amb-panel');
+
+function updatePersistentLabelPositions(){
+  if(!labelsAlwaysOn || persistentLabels.length===0){
+    if(labelLinesSvg) labelLinesSvg.innerHTML = '';
+    return;
+  }
+  const v = new THREE.Vector3();
+
+  // Keep labels clear of the settings pill (and the ambience panel, when open) -
+  // whichever currently occupies more vertical space at the top of the screen.
+  let minLabelY = 70;
+  if(topControlsEl){
+    minLabelY = Math.max(minLabelY, topControlsEl.getBoundingClientRect().bottom + 14);
+  }
+  if(ambPanelEl && !ambPanelEl.classList.contains('hidden')){
+    minLabelY = Math.max(minLabelY, ambPanelEl.getBoundingClientRect().bottom + 14);
+  }
+
+  // 1. Project every label's real anchor point in screen space.
+  const visible = [];
+  persistentLabels.forEach(item=>{
+    item.entry.group.getWorldPosition(v);
+    v.y += 0.9;
+    v.project(camera);
+    const behindCamera = v.z > 1;
+    const x = (v.x*0.5+0.5)*innerWidth;
+    const y = (-v.y*0.5+0.5)*innerHeight;
+    item.dot.style.display = 'none';
+    if(behindCamera || x<-100 || x>innerWidth+100 || y<-100 || y>innerHeight+100){
+      item.el.style.display = 'none';
+      return;
+    }
+    item.anchorX = x; item.anchorY = y;
+    item.el.style.display = 'block';
+    item.dot.style.display = 'block';
+    item.dot.style.left = x+'px';
+    item.dot.style.top  = y+'px';
+    visible.push(item);
+  });
+
+  // 2. Bucket anchors into rows by vertical proximity (floors read as rows on screen).
+  visible.sort((a,b)=>a.anchorY-b.anchorY);
+  const rows = [];
+  visible.forEach(item=>{
+    let row = rows[rows.length-1];
+    if(!row || item.anchorY - row.y > LABEL_ROW_BAND){
+      row = { y:item.anchorY, items:[] };
+      rows.push(row);
+    }
+    row.items.push(item);
+    row.y = (row.y*  (row.items.length-1) + item.anchorY) / row.items.length;
+  });
+
+  // 3. Within each row, space labels out horizontally so they never overlap,
+  //    centered on the row's average anchor x.
+  rows.forEach(row=>{
+    const items = row.items.sort((a,b)=>a.anchorX-b.anchorX);
+    const n = items.length;
+    const avgX = items.reduce((s,it)=>s+it.anchorX,0) / n;
+    const totalW = (n-1) * LABEL_MIN_GAP;
+    let startX = avgX - totalW/2;
+    // keep the whole row on-screen
+    startX = Math.max(90, Math.min(innerWidth-90, startX));
+    items.forEach((item,i)=>{
+      const labelX = Math.max(90, Math.min(innerWidth-90, startX + i*LABEL_MIN_GAP));
+      const labelY = Math.max(minLabelY, row.y - 34); // float labels just above their row of windows, but never over settings
+      item.el.style.left = labelX+'px';
+      item.el.style.top  = labelY+'px';
+      item.labelX = labelX; item.labelY = labelY;
+    });
+  });
+
+  // 4. Draw a thin leader line from each label to its real window whenever
+  //    decluttering has moved it away from the anchor.
+  const lines = [];
+  visible.forEach(item=>{
+    const dx = item.labelX - item.anchorX, dy = item.labelY - item.anchorY;
+    if(Math.hypot(dx,dy) > 16){
+      lines.push(`<line x1="${item.labelX}" y1="${item.labelY}" x2="${item.anchorX}" y2="${item.anchorY}" stroke="rgba(255,217,160,.55)" stroke-width="1"/>`);
+    }
+  });
+  labelLinesSvg.innerHTML = lines.join('');
+}
+
+const eyeFab = document.getElementById('eye-fab');
+const eyeSlash = document.getElementById('eye-slash');
+eyeFab.addEventListener('click', e=>{
+  e.stopPropagation();
+  labelsAlwaysOn = !labelsAlwaysOn;
+  eyeFab.classList.toggle('active', labelsAlwaysOn);
+  eyeSlash.style.display = labelsAlwaysOn ? 'inline' : 'none';
+  eyeFab.title = labelsAlwaysOn ? 'Hide all apartment labels' : 'Show all apartment labels';
+  buildPersistentLabels();
+  updatePersistentLabelPositions();
+});
+
+let lastPointerX = 0, lastPointerY = 0, pointerDirty = false;
+function onPointerMove(e){
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  lastPointerX = clientX; lastPointerY = clientY;
+  pointerDirty = true;
+}
+function processHover(){
+  if(!pointerDirty) return;
+  pointerDirty = false;
+  if(labelsAlwaysOn){ tooltip.classList.add('hidden'); return; }
+
+  mouse.x = (lastPointerX / innerWidth)  * 2 - 1;
+  mouse.y = (lastPointerY / innerHeight) * -2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects(apartmentHitMeshes);
+
+  if(intersects.length > 0){
+    const entry = intersects[0].object.userData.unitEntry;
+    if(entry !== hoveredUnit){
+      if(hoveredUnit) setUnitHover(hoveredUnit, false);
+      hoveredUnit = entry;
+      setUnitHover(entry, true);
+    }
+    tooltip.style.left = (lastPointerX + 14) + 'px';
+    tooltip.style.top  = (lastPointerY - 12) + 'px';
+    tooltip.textContent = (entry.isVacant ? '🪟 ' : '🏠 ') + entry.label;
+    tooltip.classList.remove('hidden');
+    canvas.style.cursor = 'pointer';
+  } else {
+    if(hoveredUnit){ setUnitHover(hoveredUnit, false); hoveredUnit = null; }
+    tooltip.classList.add('hidden');
+    canvas.style.cursor = '';
+  }
+}
+function setUnitHover(entry, on){
+  if(entry.isVacant){
+    entry.glassMat.emissiveIntensity = on ? 0.4 : 0;
+    entry.glassMat.emissive.set(on ? '#7d92ad' : '#000000');
+    return;
+  }
+  if(!entry.todo.done){
+    entry.glassMat.emissiveIntensity = on ? 3.0 : 2.2;
+    entry.bulbMat.emissiveIntensity = on ? 3.6 : 2.8;
+  }
+}
+window.addEventListener('mousemove', onPointerMove, {passive:true});
+window.addEventListener('touchmove',  onPointerMove, {passive:true});
+
+// == Voxel clouds (high, drifting around the building) ==
+const cloudGeo = new THREE.BoxGeometry(1,1,1);
+const cloudMat = new THREE.MeshStandardMaterial({ color:0xffffff, roughness:1.0, flatShading:true, transparent:true, opacity:0.92 });
+const CLOUD_COUNT = IS_MOBILE ? 18 : 32;
+const cloudMesh = new THREE.InstancedMesh(cloudGeo, cloudMat, CLOUD_COUNT);
+const cloudData = [];
+const cloudDummy = new THREE.Object3D();
+for(let i=0;i<CLOUD_COUNT;i++){
+  cloudData.push({
+    x:(Math.random()-0.5)*180, y: BASE_Y + 5 + Math.random()*45, z:(Math.random()-0.5)*180,
+    sx:5+Math.random()*10, sy:1.6+Math.random()*2, sz:5+Math.random()*10,
+    speed:0.4+Math.random()*1.1
+  });
+}
+scene.add(cloudMesh);
+
+// == Cloud sea (dense low layer standing in for "ground") ==
+const seaMat = new THREE.MeshStandardMaterial({ color:0xffffff, roughness:1.0, flatShading:true, transparent:true, opacity:0.85 });
+const SEA_COUNT = IS_MOBILE ? 26 : 46;
+const seaMesh = new THREE.InstancedMesh(cloudGeo, seaMat, SEA_COUNT);
+const seaData = [];
+for(let i=0;i<SEA_COUNT;i++){
+  seaData.push({
+    x:(Math.random()-0.5)*260, y: -2+Math.random()*8, z:(Math.random()-0.5)*260,
+    sx:14+Math.random()*22, sy:3+Math.random()*4, sz:14+Math.random()*22,
+    speed:0.15+Math.random()*0.4
+  });
+}
+scene.add(seaMesh);
+
+// == Distant floating islands (parallax) ==
+function buildIslands(){
+  const islandGroup = new THREE.Group();
+  const islandData = [];
+  const COUNT = IS_MOBILE ? 4 : 7;
+  for(let i=0;i<COUNT;i++){
+    const g = new THREE.Group();
+    const w = 2+Math.random()*3, hh = 1+Math.random()*1.4, d = 2+Math.random()*3;
+    const rock = new THREE.Mesh(getBoxGeo(w,hh,d), getMat('#7a6c5c'));
+    rock.castShadow = true;
+    g.add(rock);
+    const top = new THREE.Mesh(getBoxGeo(w,0.4,d), getMat('#5a8a4a'));
+    top.position.y = hh/2+0.2;
+    g.add(top);
+    const ang = Math.random()*Math.PI*2;
+    const r = 60 + Math.random()*70;
+    const baseX = Math.cos(ang)*r, baseZ = Math.sin(ang)*r;
+    const baseY = BASE_Y - 10 + Math.random()*50;
+    g.position.set(baseX, baseY, baseZ);
+    g.rotation.y = Math.random()*Math.PI;
+    islandGroup.add(g);
+    islandData.push({ g, baseX, baseZ, baseY, speed:0.05+Math.random()*0.12, bobOff: Math.random()*10 });
+  }
+  scene.add(islandGroup);
+  return islandData;
+}
+const islandData = buildIslands();
+
+// == Birds ==
+function buildBirds(){
+  const birdMat = new THREE.MeshStandardMaterial({ color:'#3a3a3a', flatShading:true });
+  const wing = new THREE.BufferGeometry();
+  wing.setAttribute('position', new THREE.Float32BufferAttribute([
+    -0.3,0,0,  0.3,0,0,  0,0,0.45,
+    0.3,0,0, -0.3,0,0,  0,0,-0.45
+  ],3));
+  wing.computeVertexNormals();
+  const COUNT = IS_MOBILE ? 4 : 7;
+  const birds = [];
+  for(let i=0;i<COUNT;i++){
+    const m = new THREE.Mesh(wing, birdMat);
+    scene.add(m);
+    birds.push({ m, radius: 18+Math.random()*20, height: BASE_Y+10+Math.random()*30, speed:0.15+Math.random()*0.25, ang: Math.random()*Math.PI*2 });
+  }
+  return birds;
+}
+const birds = buildBirds();
+
+// == Rain / storm ==
+const RAIN_COUNT = IS_MOBILE ? 60 : 140;
+const RAIN_LIGHT_FRACTION = 0.5;
+const RAIN_CX = 0, RAIN_CZ = 0;
+const RAIN_R  = 30;
+const RAIN_TOP = BASE_Y + 36;
+const RAIN_BOT = BASE_Y - 30;
+const rainGeo = new THREE.PlaneGeometry(.045, .9);
+const rainMat = new THREE.MeshStandardMaterial({
+  color:'#cfe0f5', emissive:'#aacbe8', emissiveIntensity:.22,
+  roughness:.3, side:THREE.DoubleSide, transparent:true, opacity:.5
+});
+const rainMesh = new THREE.InstancedMesh(rainGeo, rainMat, RAIN_COUNT);
+rainMesh.frustumCulled = false;
+rainMesh.visible = false;
+scene.add(rainMesh);
+const rain = {
+  x:new Float32Array(RAIN_COUNT), y:new Float32Array(RAIN_COUNT), z:new Float32Array(RAIN_COUNT),
+  vy:new Float32Array(RAIN_COUNT), vx:new Float32Array(RAIN_COUNT), len:new Float32Array(RAIN_COUNT)
+};
+const _rainDummy = new THREE.Object3D();
+function resetRain(i){
+  const a = Math.random()*Math.PI*2, r = Math.random()*RAIN_R;
+  rain.x[i] = RAIN_CX + Math.cos(a)*r;
+  rain.z[i] = RAIN_CZ + Math.sin(a)*r;
+  rain.y[i] = RAIN_TOP - Math.random()*4;
+  rain.vy[i]= .42 + Math.random()*.22;
+  rain.vx[i]= .04 + Math.random()*.03;
+  rain.len[i]= .7 + Math.random()*.6;
+}
+for(let i=0;i<RAIN_COUNT;i++){
+  resetRain(i);
+  rain.y[i] = RAIN_BOT + Math.random()*(RAIN_TOP-RAIN_BOT);
+}
+const RAIN_SPEED_MULT = { rain: 1, storm: 1.6 };
+function tickRain(){
+  if(AMB.weather === 'clear') return;
+  const mult = RAIN_SPEED_MULT[AMB.weather] || 1;
+  const count = rainMesh.count;
+  for(let i=0;i<count;i++){
+    rain.y[i] -= rain.vy[i]*mult;
+    rain.x[i] += rain.vx[i]*mult;
+    if(rain.y[i] < RAIN_BOT) resetRain(i);
+    _rainDummy.position.set(rain.x[i], rain.y[i], rain.z[i]);
+    _rainDummy.rotation.set(0.12,0,0);
+    _rainDummy.scale.set(1, rain.len[i], 1);
+    _rainDummy.updateMatrix();
+    rainMesh.setMatrixAt(i, _rainDummy.matrix);
+  }
+  rainMesh.instanceMatrix.needsUpdate = true;
+}
+
+// == Time of day ==
+function applyTime(){
+  const now=new Date(), hour=now.getHours()+now.getMinutes()/60;
+  let day; if(hour<5)day=0; else if(hour<7)day=(hour-5)/2; else if(hour<18)day=1; else if(hour<20)day=1-(hour-18)/2; else day=0;
+  const night=1-day;
+  const weatherMix = AMB.weather === 'storm' ? 0.7 : AMB.weather === 'rain' ? 0.4 : 0;
+
+  // `stops` = sky colours at specific hours of the day (h = hour, 0-24).
+  // t = top-of-sky colour, b = bottom-of-sky/horizon colour, f = fog colour.
+  // The app blends smoothly between each pair of stops as the clock moves.
+  // Want a pinker sunset or a bluer night? Just edit the hex colours below.
+  const stops = [
+    { h: 0,   t: '#10101e', b: '#22202e', f: '#1c1a26' },
+    { h: 5,   t: '#10101e', b: '#22202e', f: '#1c1a26' },
+    { h: 6.5, t: '#5d6fa0', b: '#f4b48a', f: '#e09a78' },
+    { h: 8,   t: '#8fb6e8', b: '#f3dfe6', f: '#cfe0f5' },
+    { h: 17,  t: '#8fb6e8', b: '#f3dfe6', f: '#cfe0f5' },
+    { h: 19,  t: '#4a4f7a', b: '#e87a5a', f: '#9a5f6a' },
+    { h: 20.5,t: '#10101e', b: '#22202e', f: '#1c1a26' },
+    { h: 24,  t: '#10101e', b: '#22202e', f: '#1c1a26' }
+  ];
+  let s1 = stops[0], s2 = stops[stops.length-1];
+  for(let i=0;i<stops.length-1;i++){
+    if(hour >= stops[i].h && hour <= stops[i+1].h){ s1 = stops[i]; s2 = stops[i+1]; break; }
+  }
+  let progress = (hour - s1.h) / (s2.h - s1.h);
+  if(isNaN(progress)) progress = 0;
+
+  const topCol = new THREE.Color(s1.t).lerp(new THREE.Color(s2.t), progress);
+  const botCol = new THREE.Color(s1.b).lerp(new THREE.Color(s2.b), progress);
+  const fogCol = new THREE.Color(s1.f).lerp(new THREE.Color(s2.f), progress);
+
+  if(weatherMix > 0){
+    const stormGray = new THREE.Color('#3a3f4a');
+    topCol.lerp(stormGray, weatherMix*0.8);
+    botCol.lerp(stormGray, weatherMix*0.6);
+    fogCol.lerp(stormGray, weatherMix*0.9);
+  }
+
+  skyMat.uniforms.topColor.value.copy(topCol);
+  skyMat.uniforms.bottomColor.value.copy(botCol);
+  scene.fog.color.copy(fogCol);
+  scene.background = fogCol;
+
+  hemi.intensity = (night*0.8 + day*0.65) * (1 - weatherMix*0.3);
+  hemi.color.lerpColors(new THREE.Color('#9aa6d8'), new THREE.Color('#ffffff'), day);
+  hemi.groundColor.lerpColors(new THREE.Color('#4a4060'), new THREE.Color('#6a6258'), day);
+
+  sun.intensity = (night*0.3 + day*1.4) * (1 - weatherMix*0.45);
+  sun.color.lerpColors(new THREE.Color('#7788cc'), new THREE.Color('#fff2e0'), day);
+
+  nightFill.intensity = night * 3.0;
+
+  decorLights.forEach(({light,base})=>{
+    light.intensity = base * Math.max(0.25, night);
+  });
+  if(towerGroup.userData.blinkMat){
+    towerGroup.userData.blinkMat.emissiveIntensity = 1.4 + Math.sin(performance.now()*0.006)*1.0;
+  }
+
+  renderer.toneMappingExposure = (1.0 + day*0.15) * AMB.brightness;
+
+  const barAlpha = (0.22 + night*0.15).toFixed(2); // matches the header's base transparency, still brightens slightly at night
+  const barBg = `rgba(255,255,255,${barAlpha})`;
+  const taskBar = document.getElementById('task-bar');
+  if(taskBar) taskBar.style.background = barBg;
+}
+
+// == Ambience panel ==
+// This block builds the "Brightness" and "Mist" dot-sliders you see in the
+// Sky Conditions panel. Want to add a new slider (e.g. wind speed)? Add
+// another object to the SLIDERS array below with the same shape — the code
+// underneath builds the row and wiring for you automatically.
+const SEGS_COUNT = 8; // how many little dots each slider is split into
+const SLIDERS = [
+  { key:'brightness', label:'Brightness', min:0.2, max:2, fmt:v=>Math.round(v*100)+'%', color:'#c9691f' },
+  { key:'fogDensity',  label:'Mist',       min:0.2, max:3, fmt:v=>v.toFixed(1)+'×',     color:'#8fb6e8' }
+];
+const apRows = document.getElementById('ap-rows');
+
+function valToSegCount(val,min,max){ return Math.max(1, Math.min(SEGS_COUNT, Math.round(((val-min)/(max-min))*SEGS_COUNT))); }
+function segCountToVal(n,min,max){ return min + (n/SEGS_COUNT)*(max-min); }
+
+SLIDERS.forEach(({key,label,min,max,fmt})=>{
+  const row = document.createElement('div'); row.className='ap-row';
+  const filled = valToSegCount(AMB[key],min,max);
+  let segsHTML='';
+  for(let i=0;i<SEGS_COUNT;i++){
+    segsHTML += `<div class="ap-seg${i===filled-1?' peak':''}" data-i="${i}"></div>`;
+  }
+  row.innerHTML = `
+    <span class="ap-lbl-text">${label}</span>
+    <div class="ap-segs" id="segs-${key}">${segsHTML}</div>
+    <span class="ap-val" id="v-${key}">${fmt(AMB[key])}</span>`;
+  apRows.appendChild(row);
+
+  const segsEl = row.querySelector('.ap-segs');
+  function setFromClientX(clientX){
+    const rect = segsEl.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX-rect.left)/rect.width));
+    const n = Math.max(1, Math.min(SEGS_COUNT, Math.ceil(ratio*SEGS_COUNT)));
+    AMB[key] = segCountToVal(n,min,max);
+    document.getElementById('v-'+key).textContent = fmt(AMB[key]);
+    [...segsEl.children].forEach((seg,i)=>{
+      seg.classList.toggle('peak', i===n-1);
+    });
+    applyTime();
+  }
+  let dragging=false;
+  segsEl.addEventListener('pointerdown', e=>{ dragging=true; segsEl.setPointerCapture(e.pointerId); setFromClientX(e.clientX); });
+  segsEl.addEventListener('pointermove', e=>{ if(dragging) setFromClientX(e.clientX); });
+  segsEl.addEventListener('pointerup', ()=>{ dragging=false; });
+  segsEl.addEventListener('pointercancel', ()=>{ dragging=false; });
+});
+
+// Weather + Clouds — merged into a single compact "Sky" row.
+// The 3 weather buttons use plain line-icon SVGs (same visual style as the
+// header icons) instead of emoji, for a cleaner look. To swap an icon,
+// replace the <svg>...</svg> markup for that button — each one just needs
+// to use stroke="currentColor" so it inherits the button's text colour.
+const weatherRow = document.createElement('div');
+weatherRow.className = 'ap-row ap-weather-row';
+weatherRow.innerHTML = `
+  <div class="aw-segs" id="aw-segs">
+    <button class="aw-opt active" data-w="clear" title="Clear">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="4"/>
+        <line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+        <line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+      </svg>
+    </button>
+    <button class="aw-opt" data-w="rain" title="Rain">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 16.2A4.5 4.5 0 0 0 17.5 8h-1.8A7 7 0 1 0 4 14.9"/>
+        <line x1="8" y1="19" x2="8" y2="21"/><line x1="12" y1="19" x2="12" y2="21"/><line x1="16" y1="19" x2="16" y2="21"/>
+      </svg>
+    </button>
+    <button class="aw-opt" data-w="storm" title="Storm">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 16.9A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.9"/>
+        <polyline points="13 11 9 17 12 17 11 22 16 15 13 15 13 11"/>
+      </svg>
+    </button>
+  </div>
+  <div class="ap-row-divider"></div>
+  <span class="ap-cloud-icon" title="Toggle clouds">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
+    </svg>
+  </span>
+  <div class="ap-toggle-track on" id="t-clouds"><div class="ap-toggle-knob"></div></div>`;
+apRows.appendChild(weatherRow);
+const cloudTrack = document.getElementById('t-clouds');
+cloudTrack.addEventListener('click', ()=>{
+  AMB.clouds = !AMB.clouds;
+  cloudTrack.classList.toggle('on', AMB.clouds);
+  cloudMesh.visible = AMB.clouds;
+});
+const awSegs = document.getElementById('aw-segs');
+const lightningEl = document.getElementById('lightning-flash');
+let lightningTimer = null;
+function scheduleLightning(){
+  const delay = 3500 + Math.random()*7000;
+  lightningTimer = setTimeout(()=>{
+    lightningEl.classList.remove('flash');
+    requestAnimationFrame(()=>lightningEl.classList.add('flash'));
+    const prevSun = sun.intensity, prevHemi = hemi.intensity;
+    sun.intensity = Math.max(prevSun, 2.0);
+    hemi.intensity = Math.max(prevHemi, 1.2);
+    setTimeout(()=>{ sun.intensity = prevSun; hemi.intensity = prevHemi; }, 160);
+    if(AMB.weather === 'storm') scheduleLightning();
+  }, delay);
+}
+function toggleLightning(on){
+  clearTimeout(lightningTimer);
+  lightningEl.classList.remove('flash');
+  if(on) scheduleLightning();
+}
+function setWeather(w){
+  AMB.weather = w;
+  [...awSegs.children].forEach(btn=>btn.classList.toggle('active', btn.dataset.w === w));
+  if(w === 'clear'){ rainMesh.visible = false; }
+  else {
+    rainMesh.visible = true;
+    rainMesh.count = w === 'storm' ? RAIN_COUNT : Math.round(RAIN_COUNT*RAIN_LIGHT_FRACTION);
+    rainMat.opacity = w === 'storm' ? 0.68 : 0.48;
+  }
+  toggleLightning(w === 'storm');
+  applyTime();
+}
+awSegs.addEventListener('click', e=>{
+  const btn = e.target.closest('.aw-opt');
+  if(!btn) return;
+  setWeather(btn.dataset.w);
+});
+
+document.getElementById('ap-reset').addEventListener('click', ()=>{
+  Object.assign(AMB, defaults);
+  SLIDERS.forEach(({key,min,max,fmt})=>{
+    const n = valToSegCount(AMB[key],min,max);
+    document.getElementById('v-'+key).textContent = fmt(AMB[key]);
+    const segsEl = document.getElementById('segs-'+key);
+    [...segsEl.children].forEach((seg,i)=>{
+      seg.classList.toggle('peak', i===n-1);
+    });
+  });
+  cloudTrack.classList.toggle('on', AMB.clouds);
+  cloudMesh.visible = AMB.clouds;
+  setWeather('clear');
+});
+
+const fab = document.getElementById('settings-fab'), panel = document.getElementById('amb-panel');
+fab.addEventListener('click', e=>{
+  e.stopPropagation();
+  const opening = panel.classList.contains('hidden');
+  document.getElementById('todo-panel').classList.add('hidden');
+  document.getElementById('account-panel').classList.add('hidden');
+  document.getElementById('account-fab').classList.remove('active');
+  if(opening) panel.classList.remove('hidden');
+  else panel.classList.add('hidden');
+  fab.classList.toggle('active', opening);
+});
+
+applyTime();
+setInterval(applyTime, 60000);
+
+// == Todo logic (localStorage guest mode, or Supabase for signed-in sync) ==
+// "Tenants" are just todo items with fancier names. If not signed in, they
+// live in the browser's localStorage (STORE_KEY below) so they only exist
+// on this device. Signed-in users get the same data synced live from
+// Supabase instead, via the SUPABASE_URL/SUPABASE_ANON_KEY below.
+const STORE_KEY = 'vg-apartments-todos';
+const MODE_KEY  = 'vg-apartments-mode';
+const SUPABASE_URL = 'https://kideekyuyiujimngbbhy.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtpZGVla3l1eWl1amltbmdiYmh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ5Mzg0MTUsImV4cCI6MjEwMDUxNDQxNX0.HHokhOq-25bBWas89l5Z7BP3qB2Ba7YW4vxVepmfpas';
+const supabase = createClient ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+const SYNC_AVAILABLE = !!supabase;
+
+let todos = [];
+let appMode = 'guest';       // 'guest' | 'auth'
+let currentUser = null;
+let realtimeChannel = null;
+
+function loadFromLocal(){
+  try { todos = JSON.parse(localStorage.getItem(STORE_KEY)) || []; } catch(e){ todos = []; }
+}
+function saveLocalTodos(){
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(todos)); } catch(e){ /* sandboxed storage - session-only fallback */ }
+}
+function rowToTodo(row){
+  return {
+    id: row.id, text: row.text, done: row.done,
+    createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+    completedAt: row.completed_at ? new Date(row.completed_at).getTime() : null
+  };
+}
+async function loadFromSupabase(){
+  if(!currentUser){ todos = []; return; }
+  const { data, error } = await supabase.from('tenants').select('*').order('created_at', { ascending:false });
+  if(error){ console.error('Failed to load tenants:', error.message); todos = []; return; }
+  todos = data.map(rowToTodo);
+}
+async function importLocalTodosToSupabase(localTodos){
+  for(const t of [...localTodos].reverse()){
+    const { error } = await supabase.from('tenants').insert({
+      user_id: currentUser.id, text: t.text, done: !!t.done,
+      created_at: t.createdAt ? new Date(t.createdAt).toISOString() : new Date().toISOString(),
+      completed_at: t.completedAt ? new Date(t.completedAt).toISOString() : null
+    });
+    if(error) console.error('Failed to import tenant:', error.message);
+  }
+}
+function subscribeRealtime(){
+  if(realtimeChannel){ supabase.removeChannel(realtimeChannel); realtimeChannel = null; }
+  if(!currentUser) return;
+  realtimeChannel = supabase.channel('tenants-'+currentUser.id)
+    .on('postgres_changes', { event:'*', schema:'public', table:'tenants', filter:`user_id=eq.${currentUser.id}` }, () => {
+      loadFromSupabase().then(()=>{ renderTodos(); buildApartmentUnits(); });
+    })
+    .subscribe();
+}
+function unsubscribeRealtime(){
+  if(realtimeChannel){ supabase.removeChannel(realtimeChannel); realtimeChannel = null; }
+}
+
+function fmtDate(ts){
+  if(!ts) return '';
+  return new Date(ts).toLocaleDateString([],{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+}
+
+let completedOpen = false;
+
+async function toggleTodoAt(i){
+  const t = todos[i];
+  if(!t) return;
+  t.done = !t.done;
+  t.completedAt = t.done ? Date.now() : null;
+  renderTodos(); buildApartmentUnits();
+  if(appMode === 'auth'){
+    const { error } = await supabase.from('tenants')
+      .update({ done: t.done, completed_at: t.completedAt ? new Date(t.completedAt).toISOString() : null })
+      .eq('id', t.id);
+    if(error) console.error('Failed to update tenant:', error.message);
+  } else {
+    saveLocalTodos();
+  }
+}
+async function deleteTodoAt(i){
+  const t = todos[i];
+  if(!t) return;
+  delete windowSpawnTimes[t.id];
+  todos.splice(i,1);
+  renderTodos(); buildApartmentUnits();
+  if(appMode === 'auth'){
+    const { error } = await supabase.from('tenants').delete().eq('id', t.id);
+    if(error) console.error('Failed to delete tenant:', error.message);
+  } else {
+    saveLocalTodos();
+  }
+}
+
+function createTodoItem(t, i){
+  const item = document.createElement('div');
+  item.className = 'td-item' + (t.done?' done':'');
+  const dateLabel = t.done && t.completedAt
+    ? `Moved out ${fmtDate(t.completedAt)}`
+    : `Moved in ${fmtDate(t.createdAt || t.id)}`;
+  item.innerHTML = `
+    <div class="td-check">${t.done?'✓':''}</div>
+    <div class="td-body">
+      <span class="td-text">${t.text.replace(/</g,'&lt;')}</span>
+      <span class="td-date">${dateLabel}</span>
+    </div>
+    <button class="td-del" data-i="${i}">×</button>`;
+  item.querySelector('.td-check').addEventListener('click',()=>toggleTodoAt(i));
+  item.querySelector('.td-text').addEventListener('click',()=>toggleTodoAt(i));
+  item.querySelector('.td-del').addEventListener('click',e=>{ e.stopPropagation(); deleteTodoAt(i); });
+  return item;
+}
+
+function renderTodos(){
+  const dateEl = document.getElementById('tp-date-text');
+  if(dateEl) dateEl.textContent = new Date().toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'});
+  const activeCount = todos.filter(t=>!t.done).length;
+  const countEl = document.getElementById('tp-count');
+  if(countEl) countEl.textContent = activeCount + (activeCount===1 ? ' tenant' : ' tenants');
+
+  const list = document.getElementById('todo-list');
+  list.innerHTML = '';
+  if(todos.length === 0){
+    list.innerHTML = `<div id="td-empty">No tenants yet. Type a task below to move someone in.</div>`;
+    return;
+  }
+
+  const activeIdx = [], doneIdx = [];
+  todos.forEach((t,i)=> (t.done ? doneIdx : activeIdx).push(i));
+
+  if(activeIdx.length === 0 && doneIdx.length > 0){
+    list.innerHTML = `<div id="td-empty">All tenants settled in. Nice and quiet up there.</div>`;
+  } else {
+    activeIdx.forEach(i=> list.appendChild(createTodoItem(todos[i], i)));
+  }
+
+  if(doneIdx.length > 0){
+    const toggle = document.createElement('div');
+    toggle.className = 'td-completed-toggle';
+    toggle.innerHTML = `<span>Completed · ${doneIdx.length}</span><span class="td-chevron">${completedOpen?'▲':'▼'}</span>`;
+    toggle.addEventListener('click', ()=>{ completedOpen = !completedOpen; renderTodos(); });
+    list.appendChild(toggle);
+
+    if(completedOpen){
+      doneIdx.forEach(i=> list.appendChild(createTodoItem(todos[i], i)));
+    }
+  }
+}
+
+async function addTodo(){
+  const inp = document.getElementById('task-input');
+  const text = inp.value.trim();
+  if(!text) return;
+  if(todos.length >= TOTAL_SLOTS){
+    inp.placeholder = 'building is fully occupied!';
+    setTimeout(()=>{ inp.placeholder = 'move a new tenant in...'; }, 1800);
+    return;
+  }
+  inp.value = '';
+  const bar = document.getElementById('task-bar');
+  bar.classList.remove('success');
+  requestAnimationFrame(()=>bar.classList.add('success'));
+  setTimeout(()=>bar.classList.remove('success'), 600);
+
+  if(appMode === 'auth'){
+    const { data, error } = await supabase.from('tenants')
+      .insert({ user_id: currentUser.id, text, done:false })
+      .select().single();
+    if(error){ console.error('Failed to add tenant:', error.message); return; }
+    todos.unshift(rowToTodo(data));
+  } else {
+    todos.unshift({text, done:false, id:Date.now(), createdAt:Date.now()});
+    saveLocalTodos();
+  }
+  renderTodos(); buildApartmentUnits();
+}
+
+const taskInput = document.getElementById('task-input');
+taskInput.addEventListener('keydown', e=>{
+  if(e.key==='Enter'){ e.preventDefault(); addTodo(); }
+  if(e.key==='Tab'){ e.preventDefault(); todoPanel.classList.toggle('hidden'); }
+});
+canvas.addEventListener('pointerdown', ()=>taskInput.blur());
+
+document.getElementById('task-submit').addEventListener('click', addTodo);
+const todoFab = document.getElementById('todo-fab');
+const todoPanel = document.getElementById('todo-panel');
+todoFab.addEventListener('click', e=>{
+  e.stopPropagation();
+  const opening = todoPanel.classList.contains('hidden');
+  todoPanel.classList.add('hidden');
+  panel.classList.add('hidden');
+  fab.classList.remove('active');
+  accountPanel.classList.add('hidden');
+  accountFab.classList.remove('active');
+  if(opening) todoPanel.classList.remove('hidden');
+});
+document.getElementById('tp-add').addEventListener('click', e=>{
+  e.stopPropagation();
+  todoPanel.classList.add('hidden');
+  taskInput.focus();
+});
+
+document.addEventListener('click', ()=>{
+  panel.classList.add('hidden');
+  fab.classList.remove('active');
+  todoPanel.classList.add('hidden');
+  accountPanel.classList.add('hidden');
+  accountFab.classList.remove('active');
+});
+document.getElementById('amb-panel').addEventListener('click', e=>e.stopPropagation());
+document.getElementById('todo-panel').addEventListener('click', e=>e.stopPropagation());
+
+// == Account panel ==
+const accountFab = document.getElementById('account-fab');
+const accountPanel = document.getElementById('account-panel');
+const accDot = document.getElementById('acc-dot');
+const accLabel = document.getElementById('acc-label');
+const accDesc = document.getElementById('acc-desc');
+const accAction = document.getElementById('acc-action');
+
+function updateAccountUI(){
+  if(appMode === 'auth' && currentUser){
+    accDot.className = 'acc-dot synced';
+    accLabel.textContent = currentUser.email || 'Signed in';
+    accDesc.textContent = 'Synced — tenants follow you to any device.';
+    accAction.textContent = 'Sign out';
+  } else if(SYNC_AVAILABLE){
+    accDot.className = 'acc-dot guest';
+    accLabel.textContent = 'Guest mode';
+    accDesc.textContent = 'Tenants are saved on this device only.';
+    accAction.textContent = 'Sign in to sync';
+  } else {
+    accDot.className = 'acc-dot guest';
+    accLabel.textContent = 'Guest mode';
+    accDesc.textContent = 'Sync is unavailable right now — tenants are saved on this device only.';
+    accAction.textContent = 'Sync unavailable';
+  }
+}
+accountFab.addEventListener('click', e=>{
+  e.stopPropagation();
+  const opening = accountPanel.classList.contains('hidden');
+  todoPanel.classList.add('hidden');
+  panel.classList.add('hidden'); fab.classList.remove('active');
+  if(opening) accountPanel.classList.remove('hidden'); else accountPanel.classList.add('hidden');
+  accountFab.classList.toggle('active', opening);
+});
+accountPanel.addEventListener('click', e=>e.stopPropagation());
+accAction.addEventListener('click', async e=>{
+  e.stopPropagation();
+  if(appMode === 'auth'){
+    await supabase.auth.signOut();
+  } else if(SYNC_AVAILABLE){
+    accountPanel.classList.add('hidden');
+    accountFab.classList.remove('active');
+    setAuthTab('signin');
+    showAuthOverlay();
+  }
+});
+
+// == Auth overlay ==
+const authOverlay = document.getElementById('auth-overlay');
+const authCard = document.querySelector('.auth-card');
+const authForm = document.getElementById('auth-form');
+const authEmail = document.getElementById('auth-email');
+const authPassword = document.getElementById('auth-password');
+const authSubmit = document.getElementById('auth-submit');
+const authError = document.getElementById('auth-error');
+const authNote = document.getElementById('auth-note');
+const authTabs = document.querySelectorAll('.auth-tab');
+const authGuestBtn = document.getElementById('auth-guest');
+let authMode = 'signin';
+
+authCard.addEventListener('click', e=>e.stopPropagation());
+function showAuthOverlay(){ authOverlay.classList.remove('hidden'); authEmail.focus(); }
+function hideAuthOverlay(){ authOverlay.classList.add('hidden'); }
+function setAuthTab(mode){
+  authMode = mode;
+  authTabs.forEach(b=>b.classList.toggle('active', b.dataset.tab===mode));
+  authSubmit.textContent = mode === 'signin' ? 'Sign In' : 'Sign Up';
+  authError.classList.remove('show'); authNote.classList.remove('show');
+}
+authTabs.forEach(tab=> tab.addEventListener('click', ()=>setAuthTab(tab.dataset.tab)));
+
+authForm.addEventListener('submit', async e=>{
+  e.preventDefault();
+  authError.classList.remove('show'); authNote.classList.remove('show');
+  const email = authEmail.value.trim();
+  const password = authPassword.value;
+  if(!SYNC_AVAILABLE){
+    authError.textContent = "Sync isn't available right now. You can still use Guest mode below.";
+    authError.classList.add('show');
+    return;
+  }
+  const prevLabel = authSubmit.textContent;
+  authSubmit.disabled = true;
+  authSubmit.textContent = 'Please wait…';
+  try {
+    if(authMode === 'signin'){
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if(error) throw error;
+      // onAuthStateChange (SIGNED_IN) takes it from here
+    } else {
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if(error) throw error;
+      if(!data.session){
+        authNote.textContent = 'Check your email to confirm your account, then sign in.';
+        authNote.classList.add('show');
+      }
+    }
+  } catch(err){
+    authError.textContent = err.message || 'Something went wrong. Please try again.';
+    authError.classList.add('show');
+  } finally {
+    authSubmit.disabled = false;
+    authSubmit.textContent = prevLabel;
+  }
+});
+
+authGuestBtn.addEventListener('click', ()=>{
+  localStorage.setItem(MODE_KEY, 'guest');
+  appMode = 'guest';
+  hideAuthOverlay();
+  loadFromLocal();
+  updateAccountUI(); renderTodos(); buildApartmentUnits();
+});
+
+// == Boot: resolve session -> synced account, remembered guest, or ask ==
+(async function boot(){
+  if(!SYNC_AVAILABLE){
+    // Sync unavailable (CDN hiccup, offline, etc) - run as local-only guest, no overlay nag.
+    appMode = 'guest';
+    hideAuthOverlay();
+    loadFromLocal();
+    updateAccountUI();
+    renderTodos();
+    buildApartmentUnits();
+    return;
+  }
+  const { data: { session } } = await supabase.auth.getSession();
+  if(session){
+    currentUser = session.user;
+    appMode = 'auth';
+    hideAuthOverlay();
+    await loadFromSupabase();
+    subscribeRealtime();
+  } else if(localStorage.getItem(MODE_KEY) === 'guest'){
+    appMode = 'guest';
+    hideAuthOverlay();
+    loadFromLocal();
+  } else {
+    loadFromLocal();
+    showAuthOverlay();
+  }
+  updateAccountUI();
+  renderTodos();
+  buildApartmentUnits();
+
+  supabase.auth.onAuthStateChange(async (event, newSession) => {
+    if(event === 'SIGNED_IN' && newSession){
+      const wasGuest = appMode === 'guest';
+      const localBackup = wasGuest ? [...todos] : [];
+      currentUser = newSession.user;
+      appMode = 'auth';
+      localStorage.removeItem(MODE_KEY);
+      hideAuthOverlay();
+      await loadFromSupabase();
+      if(wasGuest && todos.length === 0 && localBackup.length > 0){
+        await importLocalTodosToSupabase(localBackup);
+        await loadFromSupabase();
+      }
+      subscribeRealtime();
+      updateAccountUI(); renderTodos(); buildApartmentUnits();
+    } else if(event === 'SIGNED_OUT'){
+      currentUser = null;
+      appMode = 'guest';
+      unsubscribeRealtime();
+      loadFromLocal();
+      updateAccountUI(); renderTodos(); buildApartmentUnits();
+    }
+  });
+})();
+
+// == Animate ==
+const clock = new THREE.Clock();
+let frameN = 0;
+function animate(){
+  requestAnimationFrame(animate);
+  frameN++;
+  if(IS_MOBILE && frameN%2!==0) return;
+  const elapsed = clock.getElapsedTime();
+
+  // floating sway for the whole tower
+  towerGroup.position.set(0, BASE_Y + Math.sin(elapsed*0.3)*0.4, 0);
+  towerGroup.rotation.y = Math.sin(elapsed*0.05)*0.025;
+  towerGroup.rotation.z = Math.sin(elapsed*0.07)*0.01;
+
+  // window grow-in
+  const now = performance.now();
+  apartmentUnits.forEach(entry=>{
+    if(entry.todo && entry.group.scale.x < 0.999){
+      const t = Math.min(1, (now - entry.spawnedAt) / 420);
+      const eased = t>=1 ? 1 : 1 - Math.pow(2,-9*t)*Math.cos(t*12.5);
+      const s = Math.max(0.001, eased);
+      entry.group.scale.set(s,s,s);
+    }
+  });
+
+  if(cloudMesh.visible){
+    cloudData.forEach((c,i)=>{
+      c.x += c.speed*0.05;
+      if(c.x > 150) c.x = -150;
+      cloudDummy.position.set(c.x,c.y,c.z);
+      cloudDummy.scale.set(c.sx,c.sy,c.sz);
+      cloudDummy.updateMatrix();
+      cloudMesh.setMatrixAt(i, cloudDummy.matrix);
+    });
+    cloudMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  seaData.forEach((c,i)=>{
+    c.x += c.speed*0.05;
+    if(c.x > 200) c.x = -200;
+    cloudDummy.position.set(c.x,c.y,c.z);
+    cloudDummy.scale.set(c.sx,c.sy,c.sz);
+    cloudDummy.updateMatrix();
+    seaMesh.setMatrixAt(i, cloudDummy.matrix);
+  });
+  seaMesh.instanceMatrix.needsUpdate = true;
+
+  islandData.forEach(isl=>{
+    isl.g.position.x = isl.baseX + Math.sin(elapsed*isl.speed + isl.bobOff)*4;
+    isl.g.position.y = isl.baseY + Math.sin(elapsed*0.3 + isl.bobOff)*1.2;
+  });
+
+  birds.forEach(b=>{
+    b.ang += b.speed*0.02;
+    b.m.position.set(Math.cos(b.ang)*b.radius, b.height + Math.sin(elapsed*2+b.ang)*0.6, Math.sin(b.ang)*b.radius);
+    b.m.rotation.y = -b.ang + Math.PI/2;
+  });
+
+  tickRain();
+  processHover();
+  updatePersistentLabelPositions();
+
+  const weatherFogBoost = AMB.weather === 'storm' ? 1.7 : AMB.weather === 'rain' ? 1.3 : 1;
+  const targetDensity = FOG_BASE * AMB.fogDensity * weatherFogBoost;
+  scene.fog.density += (targetDensity - scene.fog.density) * 0.08;
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
