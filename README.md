@@ -1,6 +1,6 @@
 # Voxel Applications
 
-Five voxel garden and todo apps in one repo, each in its own folder exactly as published:
+Six voxel garden and todo apps in one repo, each in its own folder exactly as published:
 
 `heycristobal.com/voxel-applications/<folder>/`
 
@@ -11,6 +11,7 @@ Five voxel garden and todo apps in one repo, each in its own folder exactly as p
 | Voxel Task Garden | [sakura-garden-todo/](sakura-garden-todo/) | A sakura-themed voxel task garden. |
 | Voxel Mesa Oasis | [mesa-garden-todo/](mesa-garden-todo/) | A desert mesa voxel todo oasis. |
 | Skybound Flats | [floating-apartment-todo/](floating-apartment-todo/) | A floating-apartment voxel todo in the sky. |
+| IsoScapes | [isocity-todo-app/](isocity-todo-app/) | An isometric city world builder, from the isocity-todo-app repo. |
 
 ## Adding an app
 
